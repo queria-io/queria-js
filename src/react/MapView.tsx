@@ -1,5 +1,6 @@
 import type { Map, MapOptions, StyleSpecification } from "maplibre-gl";
 import { type ReactNode, useEffect, useRef } from "react";
+import { type MapHandle, mountMap } from "../render/map.js";
 
 type Props = {
   style: StyleSpecification | string;
@@ -10,31 +11,26 @@ type Props = {
   children?: ReactNode;
 };
 
-/** A MapLibre map. Passing a new style applies only the diff. Import maplibre-gl's CSS in your app. */
+/** A MapLibre map. Passing a new style applies only the diff. */
 export const MapView = ({ style, onReady, options, className = "viz-map", children }: Props) => {
   const container = useRef<HTMLDivElement>(null);
-  const map = useRef<Map | null>(null);
+  const handle = useRef<MapHandle | null>(null);
 
   useEffect(() => {
-    let cleanup: void | (() => void);
-    let alive = true;
-    import("maplibre-gl").then(({ default: maplibregl }) => {
-      if (!alive || !container.current) return;
-      const m = new maplibregl.Map({ container: container.current, style, ...options });
-      map.current = m;
-      cleanup = onReady?.(m);
-    }, console.error);
+    if (!container.current) return;
+    const h = mountMap(container.current, style, options);
+    handle.current = h;
+    const cleanup = h.map.then((m) => onReady?.(m));
     return () => {
-      alive = false;
-      cleanup?.();
-      map.current?.remove();
-      map.current = null;
+      cleanup.then((f) => f?.(), console.error);
+      h.destroy();
+      handle.current = null;
     };
     // Create the map once; style changes are applied below.
   }, []);
 
   useEffect(() => {
-    map.current?.setStyle(style);
+    handle.current?.map.then((m) => m.setStyle(style), console.error);
   }, [style]);
 
   return (

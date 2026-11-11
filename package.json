@@ -12,11 +12,21 @@
     "src"
   ],
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/elements/define.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./elements": {
+      "types": "./dist/elements/index.d.ts",
+      "default": "./dist/elements/index.js"
+    },
+    "./elements/define": {
+      "types": "./dist/elements/define.d.ts",
+      "default": "./dist/elements/define.js"
     },
     "./react": {
       "types": "./dist/react/index.d.ts",

@@ -113,3 +113,11 @@ export const createQueria = ({ dataUrl = DATA, wasmUrl = WASM }: QueriaOptions =
 
   return { query, preload };
 };
+
+let shared: Queria | null = null;
+
+/** The client shared by the Web Components and by React components outside a provider. */
+export const sharedQueria = (): Queria => (shared ??= createQueria());
+
+/** Replace the shared client, for example to read datasets from another host. */
+export const configureQueria = (options: QueriaOptions): Queria => (shared = createQueria(options));

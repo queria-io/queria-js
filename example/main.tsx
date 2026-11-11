@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { LineChart, PoweredBy, QueriaProvider, useQuery } from "../src/react/index.js";
+import "../src/elements/define.js";
+import { LineChart, useQuery } from "../src/react/index.js";
 
 const sql = `
 SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
@@ -14,9 +15,7 @@ const Population = () => {
 };
 
 createRoot(document.getElementById("root")!).render(
-  <QueriaProvider>
-    <h1>Population of Tama City</h1>
+  <>
     <Population />
-    <PoweredBy />
-  </QueriaProvider>,
+  </>,
 );

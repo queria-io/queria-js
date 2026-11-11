@@ -1,19 +1,15 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { createQueria, type Queria, type QueriaOptions } from "../client.js";
+import { createQueria, type Queria, type QueriaOptions, sharedQueria } from "../client.js";
 
 const Context = createContext<Queria | null>(null);
 
-/** Share one DuckDB instance with every component below. */
+/** Use a client with other options for the components below. Without a provider, the shared client is used. */
 export const QueriaProvider = ({ children, ...options }: QueriaOptions & { children: ReactNode }) => {
   const client = useMemo(() => createQueria(options), [options.dataUrl, options.wasmUrl]);
   return <Context.Provider value={client}>{children}</Context.Provider>;
 };
 
-export const useQueria = (): Queria => {
-  const client = useContext(Context);
-  if (!client) throw new Error("useQueria must be used inside <QueriaProvider>");
-  return client;
-};
+export const useQueria = (): Queria => useContext(Context) ?? sharedQueria();
 
 export type QueryState<T> =
   | { status: "loading" }
