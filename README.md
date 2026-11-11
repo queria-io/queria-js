@@ -1,11 +1,11 @@
-# @queria-io/viz
+# queria
 
 Query and visualize [Queria](https://queria.io/) open data in the browser. SQL runs in DuckDB WASM; datasets referenced as `<dataset>.<schema>.<table>` are attached on first use.
 
 ## HTML
 
 ```html
-<script type="module">import "@queria-io/viz/elements/define";</script>
+<script type="module">import "queria/elements/define";</script>
 
 <queria-line-chart x="year" y="population"
   sql="SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
@@ -15,7 +15,7 @@ Query and visualize [Queria](https://queria.io/) open data in the browser. SQL r
 ## React
 
 ```tsx
-import { LineChart, useQuery } from "@queria-io/viz/react";
+import { LineChart, useQuery } from "queria/react";
 
 const state = useQuery<{ year: number; population: number }>(sql);
 ```
@@ -23,7 +23,7 @@ const state = useQuery<{ year: number; population: number }>(sql);
 ## JavaScript
 
 ```ts
-import { createQueria, renderLineChart, toSeries } from "@queria-io/viz";
+import { createQueria, renderLineChart, toSeries } from "queria";
 
 const rows = await createQueria().query(sql);
 renderLineChart(el, toSeries(rows, { x: "year", y: "population" }));

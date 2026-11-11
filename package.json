@@ -1,11 +1,11 @@
 {
-  "name": "@queria-io/viz",
+  "name": "queria",
   "version": "0.0.0-semantic-release",
   "description": "Query and visualize Queria open data in the browser with DuckDB WASM and MapLibre",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/queria-io/viz.git"
+    "url": "git+https://github.com/queria-io/queria-js.git"
   },
   "files": [
     "dist",
