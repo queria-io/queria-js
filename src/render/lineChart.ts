@@ -12,10 +12,16 @@ export const lineChartSvg = (series: Series[], { width = 280, height = 96 }: Lin
   if (all.length === 0) return "";
   const pad = { left: 44, right: 8, top: 8, bottom: 18 };
   const xs = all.map((p) => p[0]);
-  const top = Math.max(...all.map((p) => p[1]));
-  const [x0, x1, y1] = [Math.min(...xs), Math.max(...xs), top * 1.05];
+  const ys = all.map((p) => p[1]);
+  // The y axis always includes 0 and extends below it for negative values.
+  const [top, bottom] = [Math.max(0, ...ys), Math.min(0, ...ys)];
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), bottom * 1.05, top * 1.05];
   const x = (v: number) => pad.left + ((v - x0) / Math.max(x1 - x0, 1)) * (width - pad.left - pad.right);
-  const y = (v: number) => height - pad.bottom - (v / (y1 || 1)) * (height - pad.top - pad.bottom);
+  const y = (v: number) => height - pad.bottom - ((v - y0) / (y1 - y0 || 1)) * (height - pad.top - pad.bottom);
+  const ticks = [...new Set([top, 0, bottom])].map(
+    (v) =>
+      `<text x="${pad.left - 4}" y="${v > 0 ? y(v) + 4 : y(v)}" text-anchor="end">${v === 0 ? "0" : esc(compact.format(v))}</text>`,
+  );
   const lines = series.map(
     (s, i) =>
       `<g stroke="${color(i)}" fill="${color(i)}">` +
@@ -31,8 +37,7 @@ export const lineChartSvg = (series: Series[], { width = 280, height = 96 }: Lin
       : "";
   return (
     `<figure class="viz-line" style="margin:0"><svg viewBox="0 0 ${width} ${height}" role="img" font-size="10" fill="currentColor">` +
-    `<text x="${pad.left - 4}" y="${y(top) + 4}" text-anchor="end">${esc(compact.format(top))}</text>` +
-    `<text x="${pad.left - 4}" y="${y(0)}" text-anchor="end">0</text>` +
+    ticks.join("") +
     `<text x="${x(x0)}" y="${height - 4}">${x0}</text>` +
     `<text x="${x(x1)}" y="${height - 4}" text-anchor="end">${x1}</text>` +
     `<line x1="${pad.left}" x2="${width - pad.right}" y1="${y(0)}" y2="${y(0)}" stroke="currentColor" stroke-opacity="0.3"/>` +
@@ -46,7 +51,7 @@ export const renderLineChart = (el: Element, series: Series[], options?: LineCha
   el.innerHTML = lineChartSvg(series, options);
 };
 
-/** Turn query rows into series: one per distinct value of `by`, or a single series labeled `label`. */
+/** Turn query rows into series sorted by x: one per distinct value of `by`, or a single series labeled `label`. */
 export const toSeries = (
   rows: Record<string, unknown>[],
   { x, y, by, label = y }: { x: string; y: string; by?: string; label?: string },
@@ -57,5 +62,6 @@ export const toSeries = (
       const key = by ? String(r[by]) : label;
       return m.set(key, [...(m.get(key) ?? []), [Number(r[x]), Number(r[y])]]);
     }, new Map<string, [number, number][]>());
-  return [...groups].map(([name, points]) => ({ label: name, points }));
+  // Rows without ORDER BY come in any order; a polyline needs its points in x order.
+  return [...groups].map(([name, points]) => ({ label: name, points: points.sort((a, b) => a[0] - b[0]) }));
 };

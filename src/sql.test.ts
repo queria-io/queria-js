@@ -11,6 +11,9 @@ describe("datasetsIn", () => {
   it("ignores names inside string literals and two-part names", () => {
     expect(datasetsIn("SELECT 'a.b.c' AS s, t.x FROM mlit.main.stations t")).toEqual(["mlit"]);
   });
+  it("ignores comments and quoted identifiers", () => {
+    expect(datasetsIn('SELECT x AS "a.b.c" -- d.e.f\nFROM /* g.h.i */ mlit.main.stations')).toEqual(["mlit"]);
+  });
 });
 
 describe("lit", () => {

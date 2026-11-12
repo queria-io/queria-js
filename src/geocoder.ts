@@ -10,10 +10,14 @@ type Result = {
   ambiguous: boolean;
 };
 
-/** Geocode a Japanese address. Returns only results matched to a single point. */
+/**
+ * Geocode a Japanese address. Returns only results matched to a single point; an address that
+ * matches nothing gives an empty array. Rate limits and other HTTP errors throw.
+ */
 export const geocode = async (address: string, signal?: AbortSignal): Promise<Place[]> => {
-  const res = await fetch(`${GEOCODER}?address=${encodeURIComponent(address)}`, { signal });
-  if (!res.ok) return [];
+  const url = `${GEOCODER}?address=${encodeURIComponent(address)}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`${url}: ${res.status}`);
   const body = (await res.json()) as { results: Result[] };
   return body.results.flatMap((r) =>
     !r.ambiguous && !r.unmatched_address?.length && r.lng != null && r.lat != null

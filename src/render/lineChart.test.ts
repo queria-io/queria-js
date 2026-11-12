@@ -13,6 +13,16 @@ describe("toSeries", () => {
       { label: "y", points: [[2000, 3]] },
     ]);
   });
+  it("sorts points by x", () => {
+    const rows = [
+      { year: 2010, v: 2 },
+      { year: 2000, v: 1 },
+    ];
+    expect(toSeries(rows, { x: "year", y: "v" })[0].points).toEqual([
+      [2000, 1],
+      [2010, 2],
+    ]);
+  });
 });
 
 describe("lineChartSvg", () => {
@@ -25,4 +35,9 @@ describe("lineChartSvg", () => {
     expect(svg).not.toContain("<b>");
   });
   it("is empty without points", () => expect(lineChartSvg([])).toBe(""));
+  it("keeps negative values inside the chart", () => {
+    const svg = lineChartSvg([{ label: "a", points: [[2000, -10], [2001, 10]] }], { width: 100, height: 100 });
+    const cys = [...svg.matchAll(/cy="([^"]+)"/g)].map((m) => Number(m[1]));
+    expect(cys.every((v) => v >= 8 && v <= 82)).toBe(true);
+  });
 });

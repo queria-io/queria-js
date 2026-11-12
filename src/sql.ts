@@ -1,11 +1,14 @@
 /** Quote a string as an SQL literal. */
 export const lit = (s: string): string => `'${s.replaceAll("'", "''")}'`;
 
-const stripLiterals = (sql: string): string => sql.replace(/'(?:[^']|'')*'/g, "''");
+/** Blank out string literals, quoted identifiers and comments, scanning left to right. */
+const stripLiterals = (sql: string): string =>
+  sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\//g, (m) => (m.startsWith("'") ? "''" : " "));
 
 /**
  * Dataset names referenced in SQL. Tables are written as <dataset>.<schema>.<table>,
- * so the first part of every three-part name outside string literals is a dataset.
+ * so the first part of every three-part name outside string literals and comments is a dataset.
+ * A struct field read as alias.column.field also matches; the client skips names that are not datasets.
  */
 export const datasetsIn = (sql: string): string[] => [
   ...new Set(

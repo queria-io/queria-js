@@ -12,13 +12,24 @@ const num = (v: string | null): number | undefined => (v === null ? undefined : 
 export class QueriaLineChart extends HTMLElement {
   static observedAttributes = ["sql", "x", "y", "by", "label", "width", "height"];
   #run = 0;
+  #pending = false;
 
   connectedCallback() {
-    this.#draw();
+    this.#schedule();
   }
 
   attributeChangedCallback() {
-    if (this.isConnected) this.#draw();
+    if (this.isConnected) this.#schedule();
+  }
+
+  /** Draw once per task: an upgrade calls attributeChangedCallback for every attribute, then connectedCallback. */
+  #schedule() {
+    if (this.#pending) return;
+    this.#pending = true;
+    queueMicrotask(() => {
+      this.#pending = false;
+      if (this.isConnected) this.#draw();
+    });
   }
 
   async #draw() {

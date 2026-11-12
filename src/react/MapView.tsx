@@ -29,7 +29,11 @@ export const MapView = ({ style, onReady, options, className = "viz-map", childr
     // Create the map once; style changes are applied below.
   }, []);
 
+  // The map is created with the first style; apply only later changes.
+  const applied = useRef(style);
   useEffect(() => {
+    if (applied.current === style) return;
+    applied.current = style;
     handle.current?.map.then((m) => m.setStyle(style), console.error);
   }, [style]);
 

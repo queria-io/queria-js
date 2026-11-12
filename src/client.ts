@@ -13,9 +13,12 @@ export type Queria = {
   query: <T = Record<string, unknown>>(sql: string) => Promise<T[]>;
   /** Attach datasets ahead of the first query. */
   preload: (names: readonly string[]) => Promise<void>;
+  /** Stop DuckDB and its worker. A later query starts it again. */
+  close: () => Promise<void>;
 };
 
 const DATA = "https://data.queria.io/datasets/queria";
+// Must match the @duckdb/duckdb-wasm version in package.json "dependencies".
 const WASM = "https://assets.queria.io/duckdb-wasm/1.33.1-dev57.0";
 
 const boot = async (wasm: string): Promise<AsyncDuckDB> => {
@@ -31,8 +34,9 @@ const boot = async (wasm: string): Promise<AsyncDuckDB> => {
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(scriptUrl));
   try {
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-    // Read Parquet by range instead of downloading whole files.
-    await db.open({ filesystem: { forceFullHTTPReads: false } });
+    // Read Parquet by range instead of downloading whole files. Arrow returns DECIMAL as an unscaled
+    // integer, so let DuckDB convert it to DOUBLE.
+    await db.open({ filesystem: { forceFullHTTPReads: false }, query: { castDecimalToDouble: true } });
     const conn = await db.connect();
     await conn.query("INSTALL ducklake; LOAD ducklake").finally(() => conn.close());
   } catch (e) {
@@ -47,10 +51,12 @@ const boot = async (wasm: string): Promise<AsyncDuckDB> => {
 /**
  * Attach one dataset. The catalog is fetched in a single GET: letting DuckDB read it by range
  * costs hundreds of 16 KiB round trips for large catalogs. Data files are still read by range.
+ * A name with no catalog (404) is not a dataset, such as alias.column.field, and is left to DuckDB.
  */
 const attach = async (db: AsyncDuckDB, data: string, name: string): Promise<void> => {
   const url = `${data}/${name}/ducklake.duckdb`;
   const res = await fetch(url);
+  if (res.status === 404) return;
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   await db.registerFileBuffer(`${name}.duckdb`, new Uint8Array(await res.arrayBuffer()));
   const conn = await db.connect();
@@ -63,11 +69,13 @@ const attach = async (db: AsyncDuckDB, data: string, name: string): Promise<void
   }
 };
 
-/** Convert Arrow values to plain JS: lists to arrays, structs to objects, BIGINT to number. */
+/** Convert Arrow values to plain JS: lists to arrays, structs to objects, BIGINT and HUGEINT to number. */
 export const plain = (v: unknown): unknown => {
   if (typeof v === "bigint") return Number(v);
   if (v === null || typeof v !== "object") return v;
   if (Array.isArray(v)) return v.map(plain);
+  // 128-bit integers come as Arrow big numbers (typed arrays); BLOBs stay Uint8Array.
+  if (ArrayBuffer.isView(v)) return Symbol.for("isArrowBigNum") in v ? Number(String(v)) : v;
   if ("toJSON" in v && typeof v.toJSON === "function") return plain(v.toJSON());
   return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
 };
@@ -111,7 +119,15 @@ export const createQueria = ({ dataUrl = DATA, wasmUrl = WASM }: QueriaOptions =
     }
   };
 
-  return { query, preload };
+  const close = async (): Promise<void> => {
+    const db = dbPromise;
+    dbPromise = null;
+    attached.clear();
+    // A failed start was already reported to the query that started it.
+    await db?.then((d) => d.terminate(), () => undefined);
+  };
+
+  return { query, preload, close };
 };
 
 let shared: Queria | null = null;
@@ -119,5 +135,8 @@ let shared: Queria | null = null;
 /** The client shared by the Web Components and by React components outside a provider. */
 export const sharedQueria = (): Queria => (shared ??= createQueria());
 
-/** Replace the shared client, for example to read datasets from another host. */
-export const configureQueria = (options: QueriaOptions): Queria => (shared = createQueria(options));
+/** Replace the shared client, for example to read datasets from another host. The previous one is closed. */
+export const configureQueria = (options: QueriaOptions): Queria => {
+  shared?.close();
+  return (shared = createQueria(options));
+};
