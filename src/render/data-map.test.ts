@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaCode, areaRows, colorsOf, pointFeatures } from "./data-map.js";
+import { areaCode, areaRows, colorScale, pointFeatures } from "./data-map.js";
 
 describe("areaCode", () => {
   it("restores leading zeros and drops the check digit", () => {
@@ -12,16 +12,22 @@ describe("areaCode", () => {
   });
 });
 
-describe("colorsOf", () => {
+describe("colorScale", () => {
   it("runs numbers from light to dark", () => {
-    expect(colorsOf([{ v: 0 }, { v: 10 }], "v")).toEqual(["#dbeafe", "#1d4ed8"]);
+    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#dbeafe", "#1d4ed8"], legend: { column: "v", min: 0, max: 10 } });
   });
-  it("gives each category its own color", () => {
-    const [a, b, c] = colorsOf([{ v: "x" }, { v: "y" }, { v: "x" }], "v");
-    expect(a).toBe(c);
-    expect(a).not.toBe(b);
+  it("gives each category its own color, and lists the first ten in the legend", () => {
+    const { colors, legend } = colorScale([{ v: "x" }, { v: "y" }, { v: "x" }], "v");
+    expect(colors[0]).toBe(colors[2]);
+    expect(colors[0]).not.toBe(colors[1]);
+    expect(legend).toEqual({ column: "v", items: [{ label: "x", color: colors[0] }, { label: "y", color: colors[1] }], more: 0 });
+    expect(colorScale(Array.from({ length: 12 }, (_, v) => ({ v: `c${v}` })), "v").legend).toMatchObject({ more: 2 });
   });
-  it("uses one color without a column", () => expect(new Set(colorsOf([{}, {}], undefined)).size).toBe(1));
+  it("uses one color without a column", () => {
+    const { colors, legend } = colorScale([{}, {}], undefined);
+    expect(new Set(colors).size).toBe(1);
+    expect(legend).toBeNull();
+  });
 });
 
 describe("pointFeatures", () => {

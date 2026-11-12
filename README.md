@@ -8,7 +8,23 @@ This package is in 0.x. Breaking changes can happen in any release until 1.0.
 
 Declare every dataset the SQL reads by its fully qualified name (`handle/name`). In SQL, refer to it by the last part of the name, as in `e_stat.<schema>.<table>`. To read two datasets with the same name, give them aliases: `{ a: "alice/e_stat", b: "bob/e_stat" }`.
 
-## HTML
+## HTML without a build step
+
+Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded from the same CDN when a chart or map first needs them, so a single HTML file is enough.
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/npm/queria@0.1/elements/define/+esm"></script>
+
+<queria-chart
+  datasets="queria/e_stat"
+  spec='{"mark": "bar", "encoding": {"x": {"field": "year", "type": "ordinal"}, "y": {"field": "population", "type": "quantitative"}}}'
+  sql="SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
+       WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-chart>
+```
+
+In a module script, import the functions from `https://cdn.jsdelivr.net/npm/queria@0.1/+esm`.
+
+## HTML with a bundler
 
 ```html
 <script type="module">import "queria/elements/define";</script>
@@ -43,6 +59,14 @@ SQL that calls `ST_*` functions loads the DuckDB spatial extension on first use.
 
 To read datasets that are not public, pass a data token (`qd_...`) or a function that returns one: `connect({ datasets, token })`. The token is sent to the Queria API and to the hosts of the declared datasets. DuckDB is shared by the page, so use one token per page.
 
+## Tables
+
+```html
+<queria-table datasets="queria/e_stat" sql="SELECT ..."></queria-table>
+```
+
+Shows up to 100 rows (`limit` changes it). In JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
+
 ## Maps
 
 ```html
@@ -50,9 +74,9 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
   layer='{"area": "city", "code": "lg_code", "color": "population", "label": "lg_code"}'></queria-map>
 ```
 
-`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each. `label` names a row on hover. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. Include maplibre-gl's CSS in the page. The map height is the CSS variable `--queria-map-height` (400px by default).
+`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. The package links maplibre-gl's CSS unless the page already does. The map height is the CSS variable `--queria-map-height` (400px by default).
 
-Charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
+With a bundler, charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 
 ## License
 

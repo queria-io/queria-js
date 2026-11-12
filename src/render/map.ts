@@ -1,4 +1,5 @@
 import type { Map, MapOptions, StyleSpecification } from "maplibre-gl";
+import { loadMaplibre } from "./data-map.js";
 
 export type MapHandle = { map: Promise<Map>; destroy: () => void };
 
@@ -8,9 +9,7 @@ export const mountMap = (
   style: StyleSpecification | string,
   options: Omit<MapOptions, "container" | "style"> = {},
 ): MapHandle => {
-  const map = import("maplibre-gl").then(
-    ({ default: maplibregl }) => new maplibregl.Map({ container: el, style, ...options }),
-  );
+  const map = loadMaplibre().then((maplibregl) => new maplibregl.Map({ container: el, style, ...options }));
   const destroy = () => {
     map.then((m) => m.remove(), console.error);
   };
