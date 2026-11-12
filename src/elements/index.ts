@@ -3,6 +3,7 @@ import { attributionHtml } from "../render/attribution.js";
 import { renderChart } from "../render/chart.js";
 import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
+import { renderTable } from "../render/table.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
 /** A line of text in place of the chart or map. Errors keep their line breaks. */
@@ -13,11 +14,11 @@ type Draw = (box: HTMLElement, rows: Record<string, unknown>[], attr: (name: str
 
 /**
  * An element that runs its `sql` (or reads `rows` as JSON), then draws the rows into `box` and shows the sources of
- * `datasets` under it. `need` is the attribute that says how to draw; nothing is drawn without it.
+ * `datasets` under it. `need` is the attribute that says how to draw, if any; nothing is drawn without it.
  */
-const dataElement = (need: string, extra: readonly string[], box: string, draw: Draw) =>
+const dataElement = (need: string | null, extra: readonly string[], box: string, draw: Draw) =>
   class extends HTMLElement {
-    static observedAttributes = ["datasets", "sql", "rows", "api-url", need, ...extra];
+    static observedAttributes = ["datasets", "sql", "rows", "api-url", ...(need ? [need] : []), ...extra];
     #run = 0;
     #pending = false;
     #finalize: (() => void) | null = null;
@@ -53,7 +54,7 @@ const dataElement = (need: string, extra: readonly string[], box: string, draw: 
     async #draw() {
       const attr = (name: string) => this.getAttribute(name);
       const [sql, rows] = [attr("sql"), attr("rows")];
-      if (!attr(need) || (!rows && !sql)) return;
+      if ((need && !attr(need)) || (!rows && !sql)) return;
       const run = ++this.#run;
       this.#clear();
       this.innerHTML = note("Loading…");
@@ -98,6 +99,15 @@ export class QueriaMap extends dataElement("layer", ["theme", "map-style"], '<di
   return renderMap(box, JSON.parse(attr("layer") ?? "{}"), rows, { theme: attr("theme") === "dark" ? "dark" : "light", ...(style ? { style } : {}) });
 }) {}
 
+/**
+ * <queria-table datasets="queria/e_stat" sql="...">
+ * Runs the SQL and shows the rows as a table, followed by the sources. `rows`, `api-url` work as on <queria-chart>;
+ * `limit` sets the rows shown (100 by default).
+ */
+export class QueriaTable extends dataElement(null, ["limit"], "<div></div>", async (box, rows, attr) =>
+  renderTable(box, rows, { limit: Number(attr("limit") ?? 100) || 100 }),
+) {}
+
 /** <queria-powered-by> */
 export class QueriaPoweredBy extends HTMLElement {
   connectedCallback() {
@@ -105,7 +115,7 @@ export class QueriaPoweredBy extends HTMLElement {
   }
 }
 
-const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-powered-by": QueriaPoweredBy };
+const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-table": QueriaTable, "queria-powered-by": QueriaPoweredBy };
 
 /** Register the custom elements. Safe to call more than once. */
 export const defineElements = (): void =>
@@ -115,6 +125,7 @@ declare global {
   interface HTMLElementTagNameMap {
     "queria-chart": QueriaChart;
     "queria-map": QueriaMap;
+    "queria-table": QueriaTable;
     "queria-powered-by": QueriaPoweredBy;
   }
 }
