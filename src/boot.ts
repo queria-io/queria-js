@@ -33,10 +33,17 @@ export const bundlesAt = (base: string): DuckDBBundles => ({
 });
 
 const workers = new WeakMap<AsyncDuckDB, Worker>();
+const authOrigins = new WeakMap<AsyncDuckDB, Set<string>>();
 
-/** Send the token to these origins from now on. A null token sends none. */
-export const setAuth = (db: AsyncDuckDB, token: string | null, origins: readonly string[]): void =>
-  workers.get(db)?.postMessage({ queriaAuth: { token, origins } });
+/**
+ * Send the token to these origins from now on, as well as to the origins given before: queries run
+ * concurrently, and one that is still reading must keep its origins. A null token sends none.
+ */
+export const setAuth = (db: AsyncDuckDB, token: string | null, origins: readonly string[]): void => {
+  const all = token === null ? new Set<string>() : new Set([...(authOrigins.get(db) ?? []), ...origins]);
+  authOrigins.set(db, all);
+  workers.get(db)?.postMessage({ queriaAuth: { token, origins: [...all] } });
+};
 
 const instantiate = async (bundles: DuckDBBundles): Promise<AsyncDuckDB> => {
   const duckdb = await import("@duckdb/duckdb-wasm");
@@ -51,7 +58,9 @@ const instantiate = async (bundles: DuckDBBundles): Promise<AsyncDuckDB> => {
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
   try {
     // Pages without cross-origin isolation cannot start threads.
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker).catch(() => db.instantiate(bundle.mainModule));
+    await (bundle.pthreadWorker
+      ? db.instantiate(bundle.mainModule, bundle.pthreadWorker).catch(() => db.instantiate(bundle.mainModule))
+      : db.instantiate(bundle.mainModule));
   } catch (e) {
     await db.terminate().catch(() => undefined);
     throw e;
@@ -91,9 +100,10 @@ export const needsSpatial = (sql: string): boolean => /\bST_\w+\s*\(/i.test(sql)
 
 /** Whether the error comes from the spatial extension not being loaded. */
 export const isSpatialMissing = (message: string): boolean =>
-  /exists in the spatial extension/i.test(message) || (/does not exist/i.test(message) && /\bst_\w+|\bgeometry\b/i.test(message));
+  /exists in the spatial extension/i.test(message) || /\b(function|type) with name (st_\w+|geometry)\b.*does not exist/i.test(message);
 
 const spatial = new WeakMap<AsyncDuckDB, Promise<void>>();
+const spatialLoaded = new WeakSet<AsyncDuckDB>();
 
 export const loadSpatial = (db: AsyncDuckDB): Promise<void> => {
   const found = spatial.get(db);
@@ -101,7 +111,9 @@ export const loadSpatial = (db: AsyncDuckDB): Promise<void> => {
   const p = db
     .connect()
     .then((conn) => conn.query("INSTALL spatial; LOAD spatial").finally(() => conn.close()))
-    .then(() => undefined)
+    .then(() => {
+      spatialLoaded.add(db);
+    })
     .catch((e: unknown) => {
       spatial.delete(db);
       throw e;
@@ -113,10 +125,12 @@ export const loadSpatial = (db: AsyncDuckDB): Promise<void> => {
 /** Run fn, loading spatial first when the SQL needs it, and once more after a missing-spatial error. */
 export const withSpatial = async <T>(db: AsyncDuckDB, sql: string, fn: () => Promise<T>): Promise<T> => {
   if (needsSpatial(sql)) await loadSpatial(db);
+  // Once spatial is loaded, running the SQL again gives the same error.
+  const loaded = spatialLoaded.has(db);
   try {
     return await fn();
   } catch (e) {
-    if (!isSpatialMissing(String(e))) throw e;
+    if (loaded || !isSpatialMissing(String(e))) throw e;
     await loadSpatial(db);
     return fn();
   }
