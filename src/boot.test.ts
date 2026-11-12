@@ -52,6 +52,7 @@ describe("spatial", () => {
   it("finds ST_ calls", () => {
     expect(needsSpatial("select st_area(geom) from t")).toBe(true);
     expect(needsSpatial("select first_name from t")).toBe(false);
+    expect(needsSpatial("select 'ST_Area(' as s -- ST_X(\nfrom t")).toBe(false);
   });
   it("recognizes the missing-extension errors", () => {
     expect(isSpatialMissing("Function st_point is not in the catalog, but it exists in the spatial extension")).toBe(true);

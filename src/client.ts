@@ -168,10 +168,11 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   const declared = aliases(datasets);
   const auth = async (): Promise<string | null> => (token === undefined ? null : typeof token === "string" ? token : await token());
   const rows = new Map<string, Promise<Dataset>>();
-  const row = (qualified: string): Promise<Dataset> => {
+  /** The dataset row, looked up once. Pass the token when the caller has already asked for it. */
+  const row = (qualified: string, token?: Promise<string | null>): Promise<Dataset> => {
     const p =
       rows.get(qualified) ??
-      auth()
+      (token ?? auth())
         .then((t) => lookup(apiUrl, qualified, t))
         .catch((e: unknown) => {
           rows.delete(qualified);
@@ -191,7 +192,7 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
       throw new Error(`Alias ${alias} is already used for ${prev.qualified} on this page. Declare ${qualified} with another alias`);
     const done =
       prev?.done ??
-      row(qualified)
+      row(qualified, Promise.resolve(t))
         .then((d) => attach(db, alias, d, t))
         .catch((err: unknown) => {
           e.attached.delete(alias);
@@ -204,8 +205,9 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   const sql = async <T,>(query: string): Promise<T[]> => {
     const eng = engine(wasmUrl);
     const aliasesUsed = used(query);
-    // Look up the datasets while DuckDB starts.
-    const [db, t, ds] = await Promise.all([eng.db(), auth(), Promise.all(aliasesUsed.map((a) => row(declared.get(a) ?? "")))]);
+    // Look up the datasets while DuckDB starts. The token function is called once per query.
+    const token = auth();
+    const [db, t, ds] = await Promise.all([eng.db(), token, Promise.all(aliasesUsed.map((a) => row(declared.get(a) ?? "", token)))]);
     // Data files are read by the DuckDB worker, so hand it the token and the hosts it may go to.
     if (t !== null) setAuth(db, t, [...new Set(ds.map((d) => new URL(d.catalog_url).origin))]);
     await Promise.all(aliasesUsed.map((a) => ensure(eng, db, a, t)));

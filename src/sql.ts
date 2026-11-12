@@ -2,7 +2,7 @@
 export const lit = (s: string): string => `'${s.replaceAll("'", "''")}'`;
 
 /** Blank out string literals, quoted identifiers and comments, scanning left to right. */
-const stripLiterals = (sql: string): string =>
+export const stripLiterals = (sql: string): string =>
   sql.replace(/'(?:[^']|'')*'|"(?:[^"]|"")*"|--[^\n]*|\/\*[\s\S]*?\*\//g, (m) => (m.startsWith("'") ? "''" : " "));
 
 /**

@@ -41,6 +41,8 @@ await renderChart(el, spec, await q.sql(sql));
 
 SQL that calls `ST_*` functions loads the DuckDB spatial extension on first use.
 
+To read datasets that are not public, pass a data token (`qd_...`) or a function that returns one: `connect({ datasets, token })`. The token is sent to the Queria API and to the hosts of the declared datasets. DuckDB is shared by the page, so use one token per page.
+
 Charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 
 ## License

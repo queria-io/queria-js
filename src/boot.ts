@@ -1,4 +1,5 @@
 import type { AsyncDuckDB, DuckDBBundles } from "@duckdb/duckdb-wasm";
+import { stripLiterals } from "./sql.js";
 
 /**
  * Source put before the DuckDB worker script. It adds a Bearer token to the worker's XHRs, and only to
@@ -54,21 +55,24 @@ const instantiate = async (bundles: DuckDBBundles): Promise<AsyncDuckDB> => {
   const res = await fetch(bundle.mainWorker);
   if (!res.ok) throw new Error(`${bundle.mainWorker}: ${res.status}`);
   const url = URL.createObjectURL(new Blob([authPatch, await res.text()], { type: "text/javascript" }));
-  const worker = new Worker(url);
-  const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
   try {
-    // Pages without cross-origin isolation cannot start threads.
-    await (bundle.pthreadWorker
-      ? db.instantiate(bundle.mainModule, bundle.pthreadWorker).catch(() => db.instantiate(bundle.mainModule))
-      : db.instantiate(bundle.mainModule));
-  } catch (e) {
-    await db.terminate().catch(() => undefined);
-    throw e;
+    // A CSP without blob: in worker-src throws here, so this is inside the try that revokes the URL.
+    const worker = new Worker(url);
+    const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
+    try {
+      // Pages without cross-origin isolation cannot start threads.
+      await (bundle.pthreadWorker
+        ? db.instantiate(bundle.mainModule, bundle.pthreadWorker).catch(() => db.instantiate(bundle.mainModule))
+        : db.instantiate(bundle.mainModule));
+    } catch (e) {
+      await db.terminate().catch(() => undefined);
+      throw e;
+    }
+    workers.set(db, worker);
+    return db;
   } finally {
     URL.revokeObjectURL(url);
   }
-  workers.set(db, worker);
-  return db;
 };
 
 /** Start DuckDB from the given WASM URL, and from jsDelivr when that fails. */
@@ -95,8 +99,8 @@ export const boot = async (wasm: string): Promise<AsyncDuckDB> => {
 // The spatial extension is large, so it is loaded only for SQL that needs it, and on the error
 // DuckDB gives for a missing spatial function.
 
-/** Whether the SQL calls an ST_* function. */
-export const needsSpatial = (sql: string): boolean => /\bST_\w+\s*\(/i.test(sql);
+/** Whether the SQL calls an ST_* function outside string literals and comments. */
+export const needsSpatial = (sql: string): boolean => /\bST_\w+\s*\(/i.test(stripLiterals(sql));
 
 /** Whether the error comes from the spatial extension not being loaded. */
 export const isSpatialMissing = (message: string): boolean =>
