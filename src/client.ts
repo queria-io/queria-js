@@ -1,4 +1,5 @@
 import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
+import { boot, setAuth, withSpatial } from "./boot.js";
 import { datasetsIn, lit } from "./sql.js";
 
 /** A license of a dataset, as returned by the Queria API. */
@@ -21,8 +22,14 @@ export type ConnectOptions = {
   datasets: Declared;
   /** Base URL of the Queria API. */
   apiUrl?: string;
-  /** Base URL of the DuckDB WASM bundles. */
+  /** Base URL of the DuckDB WASM bundles. jsDelivr is used when they cannot be loaded. */
   wasmUrl?: string;
+  /**
+   * A data token (qd_...) for datasets that are not public, or a function that returns one. A function is
+   * called before each request, so it can return a fresh token. The token is sent to the API and to the
+   * hosts of the declared datasets. DuckDB is shared by the page, so use one token per page.
+   */
+  token?: string | (() => string | Promise<string>);
 };
 
 export type Connection = {
@@ -56,36 +63,9 @@ export const aliases = (declared: Declared): Map<string, string> => {
   return map;
 };
 
-const boot = async (wasm: string): Promise<AsyncDuckDB> => {
-  const duckdb = await import("@duckdb/duckdb-wasm");
-  const bundle = await duckdb.selectBundle({
-    mvp: { mainModule: `${wasm}/duckdb-mvp.wasm`, mainWorker: `${wasm}/duckdb-browser-mvp.worker.js` },
-    eh: { mainModule: `${wasm}/duckdb-eh.wasm`, mainWorker: `${wasm}/duckdb-browser-eh.worker.js` },
-  });
-  // The worker lives on another origin, so start it from a blob URL.
-  const res = await fetch(bundle.mainWorker ?? "");
-  if (!res.ok) throw new Error(`${bundle.mainWorker}: ${res.status}`);
-  const scriptUrl = URL.createObjectURL(await res.blob());
-  const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(scriptUrl));
-  try {
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-    // Read Parquet by range instead of downloading whole files. Arrow returns DECIMAL as an unscaled
-    // integer, so let DuckDB convert it to DOUBLE.
-    await db.open({ filesystem: { forceFullHTTPReads: false }, query: { castDecimalToDouble: true } });
-    const conn = await db.connect();
-    await conn.query("INSTALL ducklake; LOAD ducklake").finally(() => conn.close());
-  } catch (e) {
-    await db.terminate();
-    throw e;
-  } finally {
-    URL.revokeObjectURL(scriptUrl);
-  }
-  return db;
-};
-
 /** Look up a dataset row. The API returns the catalog URL; the package never builds it. */
-export const lookup = async (api: string, qualified: string): Promise<Dataset> => {
-  const res = await fetch(`${api}/v1/datasets/${qualified}`);
+export const lookup = async (api: string, qualified: string, token: string | null = null): Promise<Dataset> => {
+  const res = await fetch(`${api}/v1/datasets/${qualified}`, token === null ? undefined : { headers: bearer(token) });
   if (res.status === 404) throw new Error(`Dataset ${qualified} was not found`);
   if (!res.ok) throw new Error(`${api}/v1/datasets/${qualified}: ${res.status}`);
   const d = (await res.json()) as Partial<Dataset> | null;
@@ -94,6 +74,8 @@ export const lookup = async (api: string, qualified: string): Promise<Dataset> =
   return d as Dataset;
 };
 
+const bearer = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
+
 /** Parquet files sit next to the catalog: .../ducklake.duckdb → .../ducklake.duckdb.files/ */
 export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")[0]}.files/`;
 
@@ -101,9 +83,9 @@ export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")
  * Attach one dataset. The catalog is fetched in a single GET: letting DuckDB read it by range
  * costs hundreds of 16 KiB round trips for large catalogs. Data files are still read by range.
  */
-const attach = async (db: AsyncDuckDB, alias: string, d: Dataset): Promise<void> => {
+const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string | null): Promise<void> => {
   const url = d.versioned_catalog_url ?? d.catalog_url;
-  const res = await fetch(url);
+  const res = await fetch(url, token === null ? undefined : { headers: bearer(token) });
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   // One file per alias: an alias is attached once per DuckDB, while one dataset can be attached
   // under two aliases, and DuckDB refuses to attach one path twice.
@@ -144,12 +126,19 @@ const engine = (wasm: string): Engine => {
   if (found) return found;
   let db: Promise<AsyncDuckDB> | null = null;
   const e: Engine = {
-    db: () =>
-      (db ??= boot(wasm).catch((err: unknown) => {
-        db = null;
-        e.attached.clear();
+    db: async () => {
+      const p = (db ??= boot(wasm).catch((err: unknown) => {
+        if (db === p) {
+          db = null;
+          e.attached.clear();
+        }
         throw err;
-      })),
+      }));
+      const d = await p;
+      // stop() ran while DuckDB was starting; it terminates this one.
+      if (db !== p) throw new Error("DuckDB was stopped");
+      return d;
+    },
     stop: async () => {
       const started = db;
       db = null;
@@ -174,16 +163,19 @@ export const closeAll = async (): Promise<void> => {
  * Connect to Queria datasets. Declare every dataset the SQL reads by its fully qualified name;
  * the SQL refers to it by alias, such as e_stat.census.population. Short names are never resolved.
  */
-export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM }: ConnectOptions): Connection => {
+export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: ConnectOptions): Connection => {
   const declared = aliases(datasets);
+  const auth = async (): Promise<string | null> => (token === undefined ? null : typeof token === "string" ? token : await token());
   const rows = new Map<string, Promise<Dataset>>();
   const row = (qualified: string): Promise<Dataset> => {
     const p =
       rows.get(qualified) ??
-      lookup(apiUrl, qualified).catch((e: unknown) => {
-        rows.delete(qualified);
-        throw e;
-      });
+      auth()
+        .then((t) => lookup(apiUrl, qualified, t))
+        .catch((e: unknown) => {
+          rows.delete(qualified);
+          throw e;
+        });
     rows.set(qualified, p);
     return p;
   };
@@ -191,17 +183,16 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM }: ConnectOptio
   /** Declared aliases the SQL references. Other three-part names are left to DuckDB (alias.column.field). */
   const used = (sql: string): string[] => datasetsIn(sql).filter((a) => declared.has(a));
 
-  const ensure = async (alias: string): Promise<void> => {
+  const ensure = async (db: AsyncDuckDB, alias: string, t: string | null): Promise<void> => {
     const qualified = declared.get(alias) ?? "";
     const e = engine(wasmUrl);
-    const db = await e.db();
     const prev = e.attached.get(alias);
     if (prev && prev.qualified !== qualified)
       throw new Error(`Alias ${alias} is already used for ${prev.qualified} on this page. Declare ${qualified} with another alias`);
     const done =
       prev?.done ??
       row(qualified)
-        .then((d) => attach(db, alias, d))
+        .then((d) => attach(db, alias, d, t))
         .catch((err: unknown) => {
           e.attached.delete(alias);
           throw err;
@@ -211,16 +202,28 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM }: ConnectOptio
   };
 
   const sql = async <T,>(query: string): Promise<T[]> => {
-    await Promise.all(used(query).map(ensure));
-    const conn = await (await engine(wasmUrl).db()).connect();
+    const [db, t] = await Promise.all([engine(wasmUrl).db(), auth()]);
+    const aliasesUsed = used(query);
+    if (t !== null) {
+      // Data files are read by the DuckDB worker, so hand it the token and the hosts it may go to.
+      const ds = await Promise.all(aliasesUsed.map((a) => row(declared.get(a) ?? "")));
+      setAuth(db, t, [...new Set(ds.map((d) => new URL(d.catalog_url).origin))]);
+    }
+    await Promise.all(aliasesUsed.map((a) => ensure(db, a, t)));
+    const run = async (): Promise<T[]> => {
+      const conn = await db.connect();
+      try {
+        return (await conn.query(query)).toArray().map((r) => plain(r) as T);
+      } finally {
+        await conn.close();
+      }
+    };
     try {
-      return (await conn.query(query)).toArray().map((r) => plain(r) as T);
+      return await withSpatial(db, query, run);
     } catch (e) {
       const undeclared = datasetsIn(query).filter((a) => !declared.has(a));
       if (undeclared.length === 0) throw e;
       throw new Error(`${String(e)}\nIf ${undeclared.join(", ")} is a dataset, declare it in connect({ datasets })`, { cause: e });
-    } finally {
-      await conn.close();
     }
   };
 

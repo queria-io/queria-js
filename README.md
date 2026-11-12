@@ -39,6 +39,8 @@ const q = connect({ datasets: ["queria/e_stat"] });
 await renderChart(el, spec, await q.sql(sql));
 ```
 
+SQL that calls `ST_*` functions loads the DuckDB spatial extension on first use.
+
 Charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 
 ## License
