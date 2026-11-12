@@ -147,6 +147,26 @@ const boundsOf = async (map: MapLibreMap, layer: MapLayer, rows: Rows, codes: st
     }));
 };
 
+/** maplibre-gl's stylesheet for a version, from the CDN that serves the package. */
+export const maplibreCss = (version: string): string => `https://cdn.jsdelivr.net/npm/maplibre-gl@${version}/dist/maplibre-gl.css`;
+
+/** Link maplibre-gl's stylesheet once, unless the page links one already. Without it the map's controls and popups break. */
+const linkCss = (version: string): void => {
+  if (document.querySelector('link[href*="maplibre-gl"]')) return;
+  document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: maplibreCss(version) }));
+};
+
+type Maplibre = typeof import("maplibre-gl");
+
+/**
+ * maplibre-gl's exports. Version 6 is an ES module with named exports only; version 5 is UMD and has them
+ * on the default export.
+ */
+export const loadMaplibre = async (): Promise<Maplibre> => {
+  const m: Maplibre & { default?: Maplibre } = await import("maplibre-gl");
+  return typeof m.Map === "function" ? m : (m.default ?? m);
+};
+
 export type MapRenderOptions = {
   /** A MapLibre style or its URL. By default Queria's style, which has the boundary tiles. */
   style?: StyleSpecification | string;
@@ -154,7 +174,7 @@ export type MapRenderOptions = {
 };
 
 /**
- * Draw rows on a MapLibre map. maplibre-gl is loaded on first use; include its CSS in your page.
+ * Draw rows on a MapLibre map. maplibre-gl and its stylesheet are loaded on first use.
  * The map is fitted to the rows. Sources and licenses are not drawn here; the elements and React components add them.
  */
 export const renderMap = async (
@@ -163,7 +183,8 @@ export const renderMap = async (
   rows: Rows,
   { style, theme = "light" }: MapRenderOptions = {},
 ): Promise<{ map: MapLibreMap; finalize: () => void }> => {
-  const { default: maplibregl } = await import("maplibre-gl");
+  const maplibregl = await loadMaplibre();
+  linkCss(maplibregl.getVersion());
   const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[theme], center: [137, 37], zoom: 4 });
   try {
     // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to

@@ -71,7 +71,7 @@ export class QueriaChart extends HTMLElement {
  * <queria-map datasets="queria/e_stat" sql="..." layer='{"area": "city", "code": "lg_code", "color": "population"}'>
  * Runs the SQL and puts the rows on a map by area code or by lng/lat, followed by the sources of the datasets.
  * `rows`, `api-url` work as on <queria-chart>. `theme` is light or dark; `map-style` takes another MapLibre style URL.
- * Include maplibre-gl's CSS in the page. The map height is the CSS variable --queria-map-height (400px by default).
+ * The map height is the CSS variable --queria-map-height (400px by default).
  */
 export class QueriaMap extends HTMLElement {
   static observedAttributes = ["datasets", "sql", "layer", "rows", "api-url", "theme", "map-style"];
