@@ -38,7 +38,13 @@ describe("lookup", () => {
     const fetch = vi.fn(async () => Response.json({ qualified_name: "queria/e_stat", catalog_url: "u", extra: 1 }));
     vi.stubGlobal("fetch", fetch);
     expect((await lookup("https://api", "queria/e_stat")).catalog_url).toBe("u");
-    expect(fetch).toHaveBeenCalledWith("https://api/v1/datasets/queria/e_stat");
+    expect(fetch).toHaveBeenCalledWith("https://api/v1/datasets/queria/e_stat", undefined);
+  });
+  it("sends the token as Bearer", async () => {
+    const fetch = vi.fn(async () => Response.json({ qualified_name: "x/y", catalog_url: "u" }));
+    vi.stubGlobal("fetch", fetch);
+    await lookup("https://api", "x/y", "qd_t");
+    expect(fetch).toHaveBeenCalledWith("https://api/v1/datasets/x/y", { headers: { Authorization: "Bearer qd_t" } });
   });
   it("rejects a response without a catalog URL", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ dataset: { qualified_name: "x/y" } }));
@@ -52,6 +58,14 @@ describe("lookup", () => {
 
 describe("sources", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("asks a token function for each lookup", async () => {
+    const fetch = vi.fn(async (url: string) => Response.json({ qualified_name: url.split("/v1/datasets/")[1], catalog_url: "u" }));
+    vi.stubGlobal("fetch", fetch);
+    const token = vi.fn(async () => "qd_fresh");
+    await connect({ datasets: ["x/a", "x/b"], apiUrl: "https://api", token }).sources();
+    expect(token).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledWith("https://api/v1/datasets/x/a", { headers: { Authorization: "Bearer qd_fresh" } });
+  });
   it("returns every declared dataset without SQL, and only the referenced ones with SQL", async () => {
     vi.stubGlobal("fetch", async (url: string) =>
       Response.json({ qualified_name: url.split("/v1/datasets/")[1], catalog_url: "u" }),
