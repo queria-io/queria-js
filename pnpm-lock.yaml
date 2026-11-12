@@ -11,6 +11,18 @@ importers:
       '@duckdb/duckdb-wasm':
         specifier: 1.33.1-dev57.0
         version: 1.33.1-dev57.0
+      vega:
+        specifier: ^6.4.0
+        version: 6.4.0
+      vega-embed:
+        specifier: ^7.3.0
+        version: 7.3.0(vega-lite@6.5.0(vega@6.4.0))(vega@6.4.0)
+      vega-interpreter:
+        specifier: ^2.3.2
+        version: 2.3.2
+      vega-lite:
+        specifier: ^6.5.0
+        version: 6.5.0(vega@6.4.0)
     devDependencies:
       '@types/react':
         specifier: ^19.3.0
@@ -36,18 +48,6 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
-      vega:
-        specifier: ^6.4.0
-        version: 6.4.0
-      vega-embed:
-        specifier: ^7.3.0
-        version: 7.3.0(vega-lite@6.5.0(vega@6.4.0))(vega@6.4.0)
-      vega-interpreter:
-        specifier: ^2.3.2
-        version: 2.3.2
-      vega-lite:
-        specifier: ^6.5.0
-        version: 6.5.0(vega@6.4.0)
       vite:
         specifier: ^6.4.6
         version: 6.4.6(@types/node@20.19.43)(lightningcss@1.33.0)
