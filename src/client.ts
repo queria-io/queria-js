@@ -255,11 +255,19 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   return { sql, sources, shareUrl };
 };
 
-/** What queria.io/s opens: the result as a table, or drawn with the spec from a view of the SQL. */
-export const sharePayload = (sql: string, datasets: readonly { alias: string; qualifiedName: string }[], spec?: object) =>
-  spec
-    ? { cells: [{ type: "plot", chart: { ...spec, data: { name: "result" } } }], views: [{ name: "result", sql }], datasets }
-    : { cells: [{ type: "table", sql }], datasets };
+/**
+ * What queria.io/s opens: a report document with one block that shows the result as a table,
+ * or draws it with the spec (`"data": {"name": "result"}` reads the result of the SQL).
+ */
+export const sharePayload = (sql: string, datasets: readonly { alias: string; qualifiedName: string }[], spec?: object) => ({
+  version: 1,
+  title: spec && "title" in spec && typeof spec.title === "string" && spec.title.trim() ? spec.title : "Queria",
+  view: "report",
+  data: "latest",
+  params: [],
+  ...(datasets.length > 0 && { datasets }),
+  blocks: [{ id: "b1", type: "query", sql, ...(spec && { chart: { ...spec, data: { name: "result" } } }) }],
+});
 
 /** Deflate the text and write it as URL-safe Base64, as queria.io/s reads it. */
 const deflate64 = async (text: string): Promise<string> => {
