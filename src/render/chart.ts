@@ -47,13 +47,13 @@ export const TONES = {
 /** Colors of several series. The purple is left out, so it always means "highlighted". */
 
 /**
- * Axis labels for numbers: 万 and 億 on Japanese pages, k / M / G elsewhere. Small numbers are written in full.
+ * Axis labels for numbers: 万 and 億 on Japanese pages, k / M / G elsewhere. Numbers under 10,000 are written in full without separators, so years read as years.
  * An expression, so the chart keeps no function of its own.
  */
 export const numberLabel = (japanese: boolean): string =>
   japanese
-    ? "abs(datum.value) >= 1e8 ? format(datum.value / 1e8, ',.4~r') + '億' : abs(datum.value) >= 1e4 ? format(datum.value / 1e4, ',.4~r') + '万' : format(datum.value, ',.4~r')"
-    : "abs(datum.value) >= 1e4 ? format(datum.value, '.3~s') : format(datum.value, ',.4~r')";
+    ? "abs(datum.value) >= 1e8 ? format(datum.value / 1e8, ',.4~r') + '億' : abs(datum.value) >= 1e4 ? format(datum.value / 1e4, ',.4~r') + '万' : format(datum.value, '.4~r')"
+    : "abs(datum.value) >= 1e4 ? format(datum.value, '.3~s') : format(datum.value, '.4~r')";
 
 /**
  * Queria's look: gray marks, the Queria purple only for highlighted values, rounded bars, a legend above the chart,

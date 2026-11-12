@@ -29,3 +29,15 @@ describe("chartSvg", () => {
     expect(svg.match(/<svg/g)).toHaveLength(3);
   });
 });
+
+describe("number labels", () => {
+  it("write years without separators", async () => {
+    const svg = await chartSvg({ mark: "line", encoding: { x: { field: "year", type: "quantitative" }, y: { field: "v", type: "quantitative" } } }, [
+      { year: 1980, v: 20000 },
+      { year: 2020, v: 30000 },
+    ]);
+    expect(svg).toContain(">2000<");
+    expect(svg).not.toContain("2,000");
+    expect(svg).toContain("万<");
+  });
+});
