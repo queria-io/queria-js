@@ -26,6 +26,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      # Sets the version in package.json, tags it and creates the GitHub release; npm publishing is the next step
       - run: npx --yes semantic-release@25.0.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Stage the release on npm. It goes live only after a maintainer approves it on npmjs.com with 2FA
+      - name: Stage on npm
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$version" = "0.0.0-semantic-release" ]; then
+            echo "No new release"
+            exit 0
+          fi
+          npx --yes npm@12.2.2 stage publish

@@ -6,7 +6,7 @@
       { "releaseRules": [{ "breaking": true, "release": "minor" }] }
     ],
     "@semantic-release/release-notes-generator",
-    "@semantic-release/npm",
+    ["@semantic-release/npm", { "npmPublish": false }],
     "@semantic-release/github"
   ]
 }
