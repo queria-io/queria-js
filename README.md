@@ -73,6 +73,16 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
 
 Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
 
+## Numbers
+
+```html
+<queria-kpi datasets="queria/e_stat" value="population" label="人口" unit="人"
+  sql="SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
+       WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-kpi>
+```
+
+Shows the `value` column of the last row large, with its change from the row before it ("前年比 +0.9% (+1.3万人)"). To compare with another column of the last row, name it in `compare`. Numbers from 10,000 are written with 万 and 億 on Japanese pages and K, M, B elsewhere; `compact="false"` writes them in full. With `unit="%"`, the change is in points. `compare-label` replaces "前年比". In React, `<Kpi sql={sql} value="population" />`; in JavaScript, `renderKpi(el, rows, { value })`.
+
 ## Maps
 
 ```html

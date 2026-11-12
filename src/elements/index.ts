@@ -3,6 +3,7 @@ import { attributionHtml } from "../render/attribution.js";
 import { renderChart } from "../render/chart.js";
 import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
+import { renderKpi } from "../render/kpi.js";
 import { renderTable } from "../render/table.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
@@ -118,6 +119,23 @@ export class QueriaTable extends dataElement(null, ["limit"], "<div></div>", asy
   renderTable(box, rows, { limit: Number(attr("limit") ?? 100) || 100 }),
 ) {}
 
+/**
+ * <queria-kpi datasets="queria/e_stat" sql="..." value="population" label="人口" unit="人">
+ * Runs the SQL and shows the `value` column of the last row large, with its change from the row before it, followed by
+ * the sources. `compare` names a column of the last row to compare with instead; `compare-label` replaces "前年比";
+ * `compact="false"` writes the number in full. `rows`, `api-url` work as on <queria-chart>.
+ */
+export class QueriaKpi extends dataElement("value", ["compare", "label", "unit", "compare-label", "compact"], "<div></div>", async (box, rows, attr) =>
+  renderKpi(box, rows, {
+    value: attr("value") ?? "",
+    compare: attr("compare") ?? undefined,
+    label: attr("label") ?? undefined,
+    unit: attr("unit") ?? undefined,
+    compareLabel: attr("compare-label") ?? undefined,
+    compact: attr("compact") !== "false",
+  }),
+) {}
+
 /** <queria-powered-by> */
 export class QueriaPoweredBy extends HTMLElement {
   connectedCallback() {
@@ -125,7 +143,7 @@ export class QueriaPoweredBy extends HTMLElement {
   }
 }
 
-const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-table": QueriaTable, "queria-powered-by": QueriaPoweredBy };
+const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-table": QueriaTable, "queria-kpi": QueriaKpi, "queria-powered-by": QueriaPoweredBy };
 
 /** Register the custom elements. Safe to call more than once. */
 export const defineElements = (): void =>
@@ -136,6 +154,7 @@ declare global {
     "queria-chart": QueriaChart;
     "queria-map": QueriaMap;
     "queria-table": QueriaTable;
+    "queria-kpi": QueriaKpi;
     "queria-powered-by": QueriaPoweredBy;
   }
 }
