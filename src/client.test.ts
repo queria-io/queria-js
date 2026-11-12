@@ -104,12 +104,23 @@ describe("shareLink", () => {
   it("opens the SQL and its datasets on queria.io/s", async () => {
     const url = new URL(await shareLink(sharePayload("SELECT 1 FROM e_stat.a.b", datasets)));
     expect(url.origin + url.pathname).toBe("https://queria.io/s");
-    expect(await inflate(url.hash.slice(1))).toEqual({ cells: [{ type: "table", sql: "SELECT 1 FROM e_stat.a.b" }], datasets });
+    expect(await inflate(url.hash.slice(1))).toEqual({
+      version: 1,
+      title: "Queria",
+      view: "report",
+      data: "latest",
+      params: [],
+      datasets,
+      blocks: [{ id: "b1", type: "query", sql: "SELECT 1 FROM e_stat.a.b" }],
+    });
   });
   it("draws a chart from a view of the SQL", () =>
-    expect(sharePayload("SELECT 1", [], { mark: "bar" })).toEqual({
-      cells: [{ type: "plot", chart: { mark: "bar", data: { name: "result" } } }],
-      views: [{ name: "result", sql: "SELECT 1" }],
-      datasets: [],
+    expect(sharePayload("SELECT 1", [], { mark: "bar", title: "人口" })).toEqual({
+      version: 1,
+      title: "人口",
+      view: "report",
+      data: "latest",
+      params: [],
+      blocks: [{ id: "b1", type: "query", sql: "SELECT 1", chart: { mark: "bar", title: "人口", data: { name: "result" } } }],
     }));
 });
