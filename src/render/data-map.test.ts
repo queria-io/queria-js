@@ -14,7 +14,7 @@ describe("areaCode", () => {
 
 describe("colorScale", () => {
   it("runs numbers from light to dark", () => {
-    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#dbeafe", "#1d4ed8"], legend: { column: "v", min: 0, max: 10 } });
+    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#efe9f8", "#542e8c"], legend: { column: "v", min: 0, max: 10 } });
   });
   it("gives each category its own color, and lists the first ten in the legend", () => {
     const { colors, legend } = colorScale([{ v: "x" }, { v: "y" }, { v: "x" }], "v");

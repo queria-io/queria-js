@@ -39,8 +39,8 @@ export const areaCode = (area: AreaLevel, value: unknown): string | null => {
   return text.length >= digits ? text.slice(0, digits) : text.padStart(digits, "0");
 };
 
-const LOW = [219, 234, 254];
-const HIGH = [29, 78, 216];
+const LOW = [239, 233, 248];
+const HIGH = [84, 46, 140];
 
 const hex = (rgb: number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 

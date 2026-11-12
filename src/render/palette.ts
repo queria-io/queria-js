@@ -1,3 +1,3 @@
-/** Colors of the maps. Charts use the Vega-Lite colors, as on queria.io. */
-export const BASE = "#2563eb";
-export const CATEGORIES = ["#2563eb", "#ea580c", "#16a34a", "#dc2626", "#9333ea", "#0891b2", "#ca8a04", "#db2777", "#4b5563", "#65a30d"];
+/** Colors of the maps, the same as the charts': the Queria purple first. */
+export const BASE = "#7846be";
+export const CATEGORIES = ["#7846be", "#e0789b", "#3ba3a0", "#e2a33b", "#5b8def", "#9c6b4e", "#8fa34a", "#c06fc4", "#4b5563", "#d97757"];
