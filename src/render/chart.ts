@@ -1,4 +1,5 @@
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
+import { BASE, CATEGORIES } from "./palette.js";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
 export type ChartSpec = VisualizationSpec | Record<string, unknown>;
@@ -35,8 +36,29 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   };
 };
 
+/**
+ * The default look: a plain sans-serif font, no frame, grid lines only for numbers, the package's colors,
+ * and a tooltip on every mark.
+ */
+export const chartTheme: Record<string, unknown> = {
+  font: 'system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif',
+  background: "transparent",
+  view: { stroke: null },
+  range: { category: CATEGORIES },
+  mark: { color: BASE, tooltip: true },
+  bar: { cornerRadiusEnd: 2 },
+  line: { strokeWidth: 2 },
+  point: { filled: true },
+  axis: { grid: false, ticks: false, domainColor: "#a3a3a3", labelColor: "#525252", titleColor: "#404040", labelPadding: 6, titleFontWeight: 500 },
+  // Year and category labels read across instead of being turned on their side.
+  axisX: { labelAngle: 0 },
+  axisQuantitative: { domain: false, grid: true, gridColor: "#e5e5e5" },
+  legend: { labelColor: "#525252", titleColor: "#404040", titleFontWeight: 500 },
+  title: { anchor: "start", fontSize: 14, fontWeight: 600, color: "#171717" },
+};
+
 export type ChartOptions = {
-  /** Vega-Lite config, such as a theme. The spec's own config is merged over it. */
+  /** Vega-Lite config. Its top-level keys replace those of chartTheme, and the spec's own config is merged over it. */
   config?: Record<string, unknown>;
   /** Export and source menu. Hidden by default. */
   actions?: EmbedOptions["actions"];
@@ -73,7 +95,7 @@ export const renderChart = async (
     renderer: renderer ?? (rowCount(data) > CANVAS_ABOVE ? "canvas" : "svg"),
     actions,
     ...(i18n ? { i18n } : {}),
-    ...(config ? { config } : {}),
+    config: { ...chartTheme, ...config },
     ...(tooltipTheme ? { tooltip: { theme: tooltipTheme } } : {}),
   });
   return { view, finalize };

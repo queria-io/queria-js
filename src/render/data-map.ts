@@ -1,5 +1,6 @@
 import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import type { Rows } from "./chart.js";
+import { BASE, CATEGORIES } from "./palette.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
 
@@ -37,10 +38,8 @@ export const areaCode = (area: AreaLevel, value: unknown): string | null => {
   return text.length >= digits ? text.slice(0, digits) : text.padStart(digits, "0");
 };
 
-const BASE = "#2563eb";
 const LOW = [219, 234, 254];
 const HIGH = [29, 78, 216];
-const CATEGORIES = ["#2563eb", "#ea580c", "#16a34a", "#dc2626", "#9333ea", "#0891b2", "#ca8a04", "#db2777", "#4b5563", "#65a30d"];
 
 const hex = (rgb: number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 

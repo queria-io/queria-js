@@ -11,7 +11,7 @@ const link = (url: string | undefined, text: string): string =>
 export const attributionHtml = (datasets: readonly Dataset[]): string =>
   datasets.length === 0
     ? ""
-    : '<p class="queria-attribution">Source: ' +
+    : '<p class="queria-attribution" style="margin:4px 0 0;font:12px/1.5 system-ui,sans-serif;color:#737373">Source: ' +
       datasets
         .map((d) => {
           const licenses = (d.licenses ?? []).map((l) => link(l.url, l.title ?? l.id ?? "")).filter(Boolean);
