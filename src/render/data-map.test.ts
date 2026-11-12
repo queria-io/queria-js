@@ -14,14 +14,14 @@ describe("areaCode", () => {
 
 describe("colorScale", () => {
   it("runs numbers from light to dark", () => {
-    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#efe9f8", "#542e8c"], legend: { column: "v", min: 0, max: 10 } });
+    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#d9ccf0", "#542e8c"], legend: { column: "v", min: 0, max: 10 } });
   });
-  it("gives each category its own color, and lists the first ten in the legend", () => {
+  it("gives each category its own color, and lists the first seven in the legend", () => {
     const { colors, legend } = colorScale([{ v: "x" }, { v: "y" }, { v: "x" }], "v");
     expect(colors[0]).toBe(colors[2]);
     expect(colors[0]).not.toBe(colors[1]);
     expect(legend).toEqual({ column: "v", items: [{ label: "x", color: colors[0] }, { label: "y", color: colors[1] }], more: 0 });
-    expect(colorScale(Array.from({ length: 12 }, (_, v) => ({ v: `c${v}` })), "v").legend).toMatchObject({ more: 2 });
+    expect(colorScale(Array.from({ length: 12 }, (_, v) => ({ v: `c${v}` })), "v").legend).toMatchObject({ more: 5 });
   });
   it("uses one color without a column", () => {
     const { colors, legend } = colorScale([{}, {}], undefined);

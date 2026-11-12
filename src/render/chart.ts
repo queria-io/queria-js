@@ -1,3 +1,4 @@
+import { SERIES } from "./palette.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
@@ -44,7 +45,6 @@ const TONES = {
 } as const;
 
 /** Colors of several series. The purple is left out, so it always means "highlighted". */
-const SERIES = ["#3ba3a0", "#e0789b", "#e2a33b", "#5b8def", "#9c6b4e", "#8fa34a", "#d97757"];
 
 /**
  * Axis labels for numbers: 万 and 億 on Japanese pages, k / M / G elsewhere. Small numbers are written in full.

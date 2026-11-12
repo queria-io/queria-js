@@ -1,6 +1,6 @@
 import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import { type Rows, toneOf } from "./chart.js";
-import { BASE, CATEGORIES } from "./palette.js";
+import { BASE, RAMP, SERIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
@@ -39,10 +39,9 @@ export const areaCode = (area: AreaLevel, value: unknown): string | null => {
   return text.length >= digits ? text.slice(0, digits) : text.padStart(digits, "0");
 };
 
-const LOW = [239, 233, 248];
-const HIGH = [84, 46, 140];
+const [LOW, HIGH] = RAMP;
 
-const hex = (rgb: number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
+const hex = (rgb: readonly number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 
 /** What the colors mean: a range of numbers, or one color per value. */
 export type Legend =
@@ -69,11 +68,11 @@ export const colorScale = (rows: Rows, column: string | undefined): { colors: st
     return { colors, legend: { column, min, max } };
   }
   const order = [...new Set(values.map(String))];
-  const colorOf = (label: string): string => CATEGORIES[order.indexOf(label) % CATEGORIES.length];
+  const colorOf = (label: string): string => SERIES[order.indexOf(label) % SERIES.length];
   return {
     colors: values.map((v) => colorOf(String(v))),
     // Colors repeat after the tenth value, so the legend lists the first ten.
-    legend: { column, items: order.slice(0, CATEGORIES.length).map((label) => ({ label, color: colorOf(label) })), more: Math.max(0, order.length - CATEGORIES.length) },
+    legend: { column, items: order.slice(0, SERIES.length).map((label) => ({ label, color: colorOf(label) })), more: Math.max(0, order.length - SERIES.length) },
   };
 };
 
