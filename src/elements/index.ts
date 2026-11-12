@@ -1,5 +1,6 @@
 import { connect, parseDatasets } from "../client.js";
 import { attributionHtml } from "../render/attribution.js";
+import type { Annotation } from "../render/annotate.js";
 import { renderChart } from "../render/chart.js";
 import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
@@ -12,6 +13,9 @@ const themeOf = (value: string | null): "light" | "dark" | undefined => (value =
 /** The highlight attribute: one value, or a JSON array of values. */
 const highlightOf = (value: string | null): unknown =>
   value === null || value === "" ? undefined : value.trimStart().startsWith("[") ? JSON.parse(value) : value;
+
+/** The annotations attribute: a JSON array of { at, text, dx, dy }. */
+const annotationsOf = (value: string | null): Annotation[] | undefined => (value ? [JSON.parse(value)].flat() : undefined);
 
 /** A line of text in place of the chart or map. Errors keep their line breaks. */
 const note = (text: string): string =>
@@ -93,9 +97,14 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
  * rows came from in `datasets` so their sources are shown.
  * `api-url` replaces the Queria API, for example with a staging host. `theme` is light or dark; by default the chart
  * is dark when the element's text color is light. `highlight` colors one value (or a JSON array of values) purple.
+ * `annotations` adds notes with arrows, as a JSON array of { at, text, dx, dy }.
  */
-export class QueriaChart extends dataElement("spec", ["theme", "highlight"], "<div></div>", (box, rows, attr) =>
-  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, { theme: themeOf(attr("theme")), highlight: highlightOf(attr("highlight")) }),
+export class QueriaChart extends dataElement("spec", ["theme", "highlight", "annotations"], "<div></div>", (box, rows, attr) =>
+  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, {
+    theme: themeOf(attr("theme")),
+    highlight: highlightOf(attr("highlight")),
+    annotations: annotationsOf(attr("annotations")),
+  }),
 ) {}
 
 /**

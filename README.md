@@ -24,6 +24,8 @@ Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded 
 
 Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. Dates match their day (`"2020-04-01"`). When no value is found, the chart keeps its colors. In JavaScript, `renderChart(el, spec, rows, { highlight })` returns `highlighted`, which says whether a value was found. To start loading the chart code while the data loads, call `preloadChart()`.
 
+To explain a point, add a short note with an arrow: `annotations='[{"at": "2020", "text": "Station opened"}]'`. `at` picks the row the arrow points to, by a value of the x, y or color field, or by several values that must all match (`["2020", "Setagaya"]`). The note is placed 20px right and 30px above the point; `dx` and `dy` move it (in pixels). Notes work on single and layered charts. Notes whose row is not found are left out, and `renderChart` returns `annotated`, the number of notes drawn. In React and JavaScript, pass `annotations` the same way.
+
 Under each chart, map and table that ran SQL, a folded "SQL" section shows the query and links to queria.io, where readers can rerun and change it without signing in, and save it as a report. Charts open as charts. In JavaScript, `await q.shareUrl(sql, spec)` returns the link.
 
 Write each chart, map or table as one SQL statement, with its steps as `WITH` clauses. The link then carries everything needed to reproduce it.
