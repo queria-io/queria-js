@@ -121,31 +121,44 @@ const isView = (v: unknown): v is View => typeof v === "object" && v !== null &&
 
 const markType = (mark: unknown): unknown => (typeof mark === "object" && mark !== null && "type" in mark ? mark.type : mark);
 
+// Text keys of a value. Dates also match their day, as in "2020-04-01".
+const keysOf = (v: unknown): string[] => (v instanceof Date ? [v.toISOString(), v.toISOString().slice(0, 10)] : [String(v)]);
+
 /**
  * Color the highlighted values purple and the rest gray. With a color field, the series named in values are purple;
- * without one, the marks whose x, y or detail value is in values are. Text marks keep their color. Layers are
- * colored one by one.
+ * without one, the marks whose x, y or detail value is in values are (category axes are tried before number axes).
+ * Text marks keep their color. Layers are colored one by one. When no value is found, the spec is returned as it is.
  */
 export const withHighlight = (spec: ChartSpec, rows: Rows, values: readonly unknown[], accent: string, base: string): ChartSpec => {
   // Compared as text, so "2020" from an HTML attribute matches the number 2020 in the rows.
   const texts = values.map(String);
-  const hit = (v: unknown): boolean => texts.includes(String(v));
+  const hit = (v: unknown): boolean => keysOf(v).some((k) => texts.includes(k));
   const color = (enc: Encoding): Encoding => {
     const field = enc.color?.field;
     if (typeof field === "string") {
       const domain = [...new Set(rows.map((r) => r[field]))];
-      return { ...enc, color: { ...enc.color, scale: { domain, range: domain.map((d) => (hit(d) ? accent : base)) } } };
+      return domain.some(hit) ? { ...enc, color: { ...enc.color, scale: { domain, range: domain.map((d) => (hit(d) ? accent : base)) } } } : enc;
     }
-    const key = ["y", "x", "detail"].map((c) => enc[c]?.field).find((f): f is string => typeof f === "string" && rows.some((r) => hit(r[f])));
-    return key === undefined
-      ? enc
-      : { ...enc, color: { condition: { test: `indexof(${JSON.stringify(texts)}, '' + datum[${JSON.stringify(key)}]) >= 0`, value: accent }, value: base } };
+    const key = ["x", "y", "detail"]
+      .sort((a, b) => Number(enc[a]?.type === "quantitative") - Number(enc[b]?.type === "quantitative"))
+      .map((c) => enc[c]?.field)
+      .find((f): f is string => typeof f === "string" && rows.some((r) => hit(r[f])));
+    if (key === undefined) return enc;
+    const [t, k] = [JSON.stringify(texts), JSON.stringify(key)];
+    return {
+      ...enc,
+      color: {
+        condition: { test: `indexof(${t}, '' + datum[${k}]) >= 0 || (isDate(datum[${k}]) && indexof(${t}, utcFormat(datum[${k}], '%Y-%m-%d')) >= 0)`, value: accent },
+        value: base,
+      },
+    };
   };
-  const paint = (v: View): View => ({
-    ...v,
-    ...(v.encoding && markType(v.mark) !== "text" ? { encoding: color(v.encoding) } : {}),
-    ...(v.layer ? { layer: v.layer.map(paint) } : {}),
-  });
+  const paint = (v: View): View => {
+    const encoding = v.encoding && markType(v.mark) !== "text" ? color(v.encoding) : v.encoding;
+    const layer = v.layer?.map(paint);
+    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
+  };
   return isView(spec) ? paint(spec) : spec;
 };
 
@@ -162,6 +175,18 @@ export type ChartOptions = {
   theme?: Tone;
   /** By default svg, and canvas when there are more than 5,000 rows in all. */
   renderer?: "svg" | "canvas";
+  /**
+   * vega-embed's default export and vega-interpreter's expressionInterpreter, for pages that load their own versions.
+   * By default they are imported on first use.
+   */
+  vega?: { embed: Embed; expressionInterpreter: EmbedOptions["expr"] };
+};
+
+type Embed = (el: HTMLElement, spec: VisualizationSpec, options: EmbedOptions) => Promise<Result>;
+
+const loadVega = async (): Promise<NonNullable<ChartOptions["vega"]>> => {
+  const [e, i] = await Promise.all([import("vega-embed"), import("vega-interpreter")]);
+  return { embed: e.default, expressionInterpreter: i.expressionInterpreter };
 };
 
 const CANVAS_ABOVE = 5000;
@@ -172,18 +197,18 @@ const rowCount = (data: Rows | Readonly<Record<string, Rows>>): number =>
 /**
  * Draw a Vega-Lite chart. vega-embed and vega-interpreter are loaded on first use. Expressions are run by the
  * interpreter, so charts draw on pages whose Content Security Policy has no unsafe-eval.
- * Returns the Vega view and a function that removes the chart.
+ * Returns the Vega view, a function that removes the chart, and whether a highlighted value was found.
  * Sources and licenses are not drawn here; the elements and React components add them under the chart.
  */
 export const renderChart = async (
   el: HTMLElement,
   spec: ChartSpec,
   data: Rows | Readonly<Record<string, Rows>>,
-  { config, actions = false, i18n, theme, renderer, highlight }: ChartOptions = {},
-): Promise<Pick<Result, "view" | "finalize">> => {
+  { config, actions = false, i18n, theme, renderer, highlight, vega }: ChartOptions = {},
+): Promise<Pick<Result, "view" | "finalize"> & { highlighted: boolean }> => {
   const style = getComputedStyle(el);
   const tone = theme ?? toneOf(style.color);
-  const [{ default: embed }, { expressionInterpreter }] = await Promise.all([import("vega-embed"), import("vega-interpreter")]);
+  const { embed, expressionInterpreter } = vega ?? (await loadVega());
   const all = isRows(data) ? data : Object.values(data).flat();
   const shown = highlight === undefined ? spec : withHighlight(spec, all, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
   const { view, finalize } = await embed(el, withData(shown, data) as VisualizationSpec, {
@@ -197,5 +222,6 @@ export const renderChart = async (
     config: { ...chartTheme(tone, fontOf(style.fontFamily), (el.closest("[lang]")?.getAttribute("lang") ?? "ja").startsWith("ja")), ...config },
     tooltip: { theme: tone },
   });
-  return { view, finalize };
+  // Whether a highlighted value was found. When none was, the chart is drawn as if no highlight was given
+  return { view, finalize, highlighted: shown !== spec };
 };

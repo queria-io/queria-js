@@ -51,7 +51,21 @@ describe("withHighlight", () => {
   const rows = [{ name: "a", v: 1 }, { name: "b", v: 2 }];
   it("colors the marks of the value on an axis", () => {
     const spec = withHighlight({ mark: "bar", encoding: { y: { field: "name" }, x: { field: "v" } } }, rows, ["a"], "P", "G");
-    expect(spec).toMatchObject({ encoding: { color: { condition: { test: `indexof(["a"], '' + datum["name"]) >= 0`, value: "P" }, value: "G" } } });
+    expect(spec).toMatchObject({ encoding: { color: { condition: { value: "P" }, value: "G" } } });
+    expect(JSON.stringify(spec)).toContain(`indexof([\\"a\\"], '' + datum[\\"name\\"]) >= 0`);
+  });
+  it("tries a category axis before a number axis", () => {
+    const spec = withHighlight({ mark: "bar", encoding: { y: { field: "v", type: "quantitative" }, x: { field: "n", type: "ordinal" } } }, [{ n: 2, v: 1 }, { n: 1, v: 2 }], [1], "P", "G");
+    expect(JSON.stringify(spec)).toContain('datum[\\"n\\"]');
+  });
+  it("matches a date by its day", () => {
+    const spec = withHighlight({ mark: "line", encoding: { x: { field: "d" } } }, [{ d: new Date("2020-04-01T00:00:00Z") }], ["2020-04-01"], "P", "G");
+    expect(spec).toHaveProperty("encoding.color.value", "G");
+  });
+  it("returns the spec as it is when no value is found, so series keep their colors", () => {
+    const spec = { mark: "line", encoding: { x: { field: "name" }, color: { field: "v" } } };
+    expect(withHighlight(spec, rows, ["a"], "P", "G")).toBe(spec);
+    expect(withHighlight({ mark: "bar", encoding: { y: { field: "name" } } }, rows, ["z"], "P", "G")).toEqual({ mark: "bar", encoding: { y: { field: "name" } } });
   });
   it("colors a series by its name, and leaves text marks alone", () => {
     const spec = withHighlight(
