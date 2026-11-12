@@ -62,13 +62,35 @@ export const chartTheme = (tone: Tone = "light", font = "system-ui, sans-serif")
 
 /** The page's font, unless it is the browser's default serif: pages that set no font get a sans-serif. */
 export const fontOf = (family: string): string | undefined =>
-  family === "" || /^("?times new roman"?|"?times"?|serif)$/i.test(family.split(",")[0].trim()) ? undefined : family;
+  family === "" || /^("?times new roman"?|"?times"?|serif|-webkit-standard)$/i.test(family.split(",")[0].trim()) ? undefined : family;
+
+// Whether a computed color is light. Browsers give it as rgb(), or in the space it was written in, such as
+// oklch() from Tailwind CSS v4, so each space is read with its own scale; mid gray (#808080) is the threshold.
+const isLight = (color: string): boolean | undefined => {
+  const head = /^([a-z]+)\(\s*([a-z][a-z0-9-]*)?/i.exec(color.trim());
+  if (head === null) return undefined;
+  const [x, y, z] = (color.trim().slice(head[0].length).match(/-?[\d.]+/g) ?? []).map(Number);
+  if (x === undefined) return undefined;
+  const luma = (r: number, g: number, b: number): number => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  switch (head[1].toLowerCase()) {
+    case "rgb":
+    case "rgba":
+      return y === undefined || z === undefined ? undefined : luma(x, y, z) > 128;
+    case "color":
+      return y === undefined || z === undefined ? undefined : luma(x, y, z) > 0.5;
+    case "oklch":
+    case "oklab":
+      return x > 0.6;
+    case "lab":
+    case "lch":
+      return x > 54;
+    default:
+      return undefined;
+  }
+};
 
 /** Dark when the element's text is light, so the chart follows the page without being told. */
-export const toneOf = (color: string): Tone => {
-  const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
-  return r === undefined || g === undefined || b === undefined ? "light" : 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? "dark" : "light";
-};
+export const toneOf = (color: string): Tone => (isLight(color) ? "dark" : "light");
 
 export type ChartOptions = {
   /** Vega-Lite config. Its top-level keys replace those of chartTheme, and the spec's own config is merged over it. */

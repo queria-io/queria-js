@@ -1,5 +1,5 @@
 import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
-import type { Rows } from "./chart.js";
+import { type Rows, toneOf } from "./chart.js";
 import { BASE, CATEGORIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
 
@@ -209,6 +209,7 @@ export const loadMaplibre = async (): Promise<Maplibre> => {
 export type MapRenderOptions = {
   /** A MapLibre style or its URL. By default Queria's style, which has the boundary tiles. */
   style?: StyleSpecification | string;
+  /** Queria's light or dark style. By default, dark when the element's text color is light. */
   theme?: keyof typeof MAP_STYLES;
 };
 
@@ -220,11 +221,12 @@ export const renderMap = async (
   el: HTMLElement,
   layer: MapLayer,
   rows: Rows,
-  { style, theme = "light" }: MapRenderOptions = {},
+  { style, theme }: MapRenderOptions = {},
 ): Promise<{ map: MapLibreMap; finalize: () => void }> => {
   const maplibregl = await loadMaplibre();
   linkCss(maplibregl.getVersion());
-  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[theme], center: [137, 37], zoom: 4 });
+  const tone = theme ?? toneOf(getComputedStyle(el).color);
+  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[tone], center: [137, 37], zoom: 4 });
   try {
     // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to
     // load, leave it drawing, and MapLibre logs them once no listener is left.
@@ -293,7 +295,7 @@ export const renderMap = async (
     throw e;
   }
   const { legend } = colorScale(rows, layer.color);
-  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, theme)) : null;
+  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, tone)) : null;
   return {
     map,
     finalize: () => {

@@ -28,6 +28,14 @@ describe("toneOf", () => {
     expect(toneOf("rgb(10, 10, 10)")).toBe("light");
     expect(toneOf("")).toBe("light");
   });
+
+  it("reads colors the page wrote in other spaces", () => {
+    expect(toneOf("oklch(0.985 0 0)")).toBe("dark");
+    expect(toneOf("oklch(0.145 0 0)")).toBe("light");
+    expect(toneOf("color(srgb 0.98 0.98 0.98)")).toBe("dark");
+    expect(toneOf("color(display-p3 0.1 0.1 0.1)")).toBe("light");
+    expect(toneOf("lab(98 0 0)")).toBe("dark");
+  });
 });
 
 describe("fontOf", () => {
@@ -35,5 +43,6 @@ describe("fontOf", () => {
     expect(fontOf("Geist, sans-serif")).toBe("Geist, sans-serif");
     expect(fontOf('"Times New Roman"')).toBeUndefined();
     expect(fontOf("")).toBeUndefined();
+    expect(fontOf("-webkit-standard")).toBeUndefined();
   });
 });

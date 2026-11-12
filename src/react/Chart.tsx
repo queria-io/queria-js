@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Dataset } from "../client.js";
 import { attributionHtml } from "../render/attribution.js";
-import { type ChartSpec, renderChart } from "../render/chart.js";
+import { type ChartSpec, renderChart, type Tone } from "../render/chart.js";
 import { useQueria } from "./query.js";
 
-type Props = { spec: ChartSpec; className?: string } & ({ sql: string } | { rows: readonly Record<string, unknown>[] });
+type Props = { spec: ChartSpec; className?: string; theme?: Tone } & ({ sql: string } | { rows: readonly Record<string, unknown>[] });
 
 /** A Vega-Lite chart of the SQL result (or of `rows`), followed by the sources of the datasets. */
-export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
+export const Chart = ({ spec, className = "queria-chart", theme, ...data }: Props) => {
   const conn = useQueria();
   const el = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<{ sources: Dataset[]; error?: unknown }>({ sources: [] });
@@ -24,7 +24,7 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
       .then(async ([values, sources]) => {
         if (!alive || !el.current) return;
         setState({ sources });
-        ({ finalize } = await renderChart(el.current, spec, values));
+        ({ finalize } = await renderChart(el.current, spec, values, { theme }));
         if (!alive) finalize();
       })
       .catch((error: unknown) => {
@@ -37,7 +37,7 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
       alive = false;
       finalize?.();
     };
-  }, [conn, sql, rows, specKey]);
+  }, [conn, sql, rows, specKey, theme]);
 
   return (
     <div className={className}>
