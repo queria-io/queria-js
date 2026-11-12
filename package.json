@@ -50,8 +50,8 @@
     "react": ">=18",
     "vega": ">=6",
     "vega-embed": ">=7",
-    "vega-lite": ">=6",
-    "vega-interpreter": ">=2"
+    "vega-interpreter": ">=2",
+    "vega-lite": ">=6"
   },
   "peerDependenciesMeta": {
     "maplibre-gl": {
@@ -78,6 +78,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^4.7.0",
     "maplibre-gl": "^5.24.0",
+    "pmtiles": "^4.5.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^5.9.3",

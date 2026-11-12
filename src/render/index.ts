@@ -2,3 +2,11 @@ export { attributionHtml } from "./attribution.js";
 export { renderChart, withData, type ChartOptions, type ChartSpec, type Rows } from "./chart.js";
 export { mountMap, type MapHandle } from "./map.js";
 export { poweredByHtml } from "./poweredBy.js";
+export {
+  areaCode,
+  MAP_STYLES,
+  renderMap,
+  type AreaLevel,
+  type MapLayer,
+  type MapRenderOptions,
+} from "./data-map.js";

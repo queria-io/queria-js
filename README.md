@@ -43,6 +43,15 @@ SQL that calls `ST_*` functions loads the DuckDB spatial extension on first use.
 
 To read datasets that are not public, pass a data token (`qd_...`) or a function that returns one: `connect({ datasets, token })`. The token is sent to the Queria API and to the hosts of the declared datasets. DuckDB is shared by the page, so use one token per page.
 
+## Maps
+
+```html
+<queria-map datasets="queria/e_stat" sql="SELECT area AS lg_code, value AS population FROM ..."
+  layer='{"area": "city", "code": "lg_code", "color": "population", "label": "lg_code"}'></queria-map>
+```
+
+`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each. `label` names a row on hover. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. Include maplibre-gl's CSS in the page. The map height is the CSS variable `--queria-map-height` (400px by default).
+
 Charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 
 ## License

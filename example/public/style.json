@@ -1,0 +1,10 @@
+{
+  "version": 8,
+  "metadata": { "queria:bbox": "https://assets.queria.io/boundaries/boundaries-20261103.bbox.json" },
+  "sources": {
+    "queria-prefecture": { "type": "vector", "url": "pmtiles://https://assets.queria.io/boundaries/boundaries-20261103.pmtiles", "minzoom": 0, "maxzoom": 10 },
+    "queria-city": { "type": "vector", "url": "pmtiles://https://assets.queria.io/boundaries/boundaries-20261103.pmtiles", "minzoom": 4, "maxzoom": 12 },
+    "queria-small_area": { "type": "vector", "url": "pmtiles://https://assets.queria.io/boundaries/boundaries-20261103.pmtiles", "minzoom": 10, "maxzoom": 13 }
+  },
+  "layers": [{ "id": "background", "type": "background", "paint": { "background-color": "#f5f5f4" } }]
+}
