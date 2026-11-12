@@ -22,7 +22,7 @@ Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded 
        WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-chart>
 ```
 
-Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. In JavaScript, `renderChart(el, spec, rows, { highlight })`.
+Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. Dates match their day (`"2020-04-01"`). When no value is found, the chart keeps its colors. In JavaScript, `renderChart(el, spec, rows, { highlight })` returns `highlighted`, which says whether a value was found. Pages that load their own vega-embed pass it with `{ vega: { embed, expressionInterpreter } }`.
 
 Under each chart, map and table that ran SQL, a folded "SQL" section shows the query and links to queria.io, where readers can rerun and change it without signing in, and save it as a report. Charts open as charts. In JavaScript, `await q.shareUrl(sql, spec)` returns the link.
 
