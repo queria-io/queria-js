@@ -1,12 +1,31 @@
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { type Connection, type ConnectOptions, connect } from "../client.js";
 
 const Context = createContext<Connection | null>(null);
 
 /** Declare the datasets for the components below: <QueriaProvider datasets={["queria/e_stat"]}>. */
 export const QueriaProvider = ({ children, ...options }: ConnectOptions & { children: ReactNode }) => {
-  const key = JSON.stringify(options);
-  const conn = useMemo(() => connect(options), [key]);
+  // JSON drops functions, so a token function is keyed by its presence and called through a ref:
+  // a new function on each render keeps the connection, and the latest one is called.
+  const { token } = options;
+  const latest = useRef(token);
+  latest.current = token;
+  const key = JSON.stringify({ ...options, token: typeof token === "function" ? "function" : token });
+  const conn = useMemo(
+    () =>
+      connect({
+        ...options,
+        token:
+          typeof token === "function"
+            ? async () => {
+                const t = latest.current;
+                if (t === undefined) throw new Error("The token was removed");
+                return typeof t === "function" ? t() : t;
+              }
+            : token,
+      }),
+    [key],
+  );
   return <Context.Provider value={conn}>{children}</Context.Provider>;
 };
 

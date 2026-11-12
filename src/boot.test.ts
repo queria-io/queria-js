@@ -52,10 +52,14 @@ describe("spatial", () => {
   it("finds ST_ calls", () => {
     expect(needsSpatial("select st_area(geom) from t")).toBe(true);
     expect(needsSpatial("select first_name from t")).toBe(false);
+    expect(needsSpatial("select 'ST_Area(' as s -- ST_X(\nfrom t")).toBe(false);
   });
   it("recognizes the missing-extension errors", () => {
     expect(isSpatialMissing("Function st_point is not in the catalog, but it exists in the spatial extension")).toBe(true);
     expect(isSpatialMissing("Type with name GEOMETRY does not exist")).toBe(true);
+    expect(isSpatialMissing("Scalar Function with name st_area does not exist!")).toBe(true);
     expect(isSpatialMissing("Table t does not exist")).toBe(false);
+    expect(isSpatialMissing("Table with name st_stations does not exist!")).toBe(false);
+    expect(isSpatialMissing("Referenced column geometry does not exist")).toBe(false);
   });
 });

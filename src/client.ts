@@ -65,7 +65,7 @@ export const aliases = (declared: Declared): Map<string, string> => {
 
 /** Look up a dataset row. The API returns the catalog URL; the package never builds it. */
 export const lookup = async (api: string, qualified: string, token: string | null = null): Promise<Dataset> => {
-  const res = await fetch(`${api}/v1/datasets/${qualified}`, token === null ? undefined : { headers: bearer(token) });
+  const res = await fetch(`${api}/v1/datasets/${qualified}`, bearer(token));
   if (res.status === 404) throw new Error(`Dataset ${qualified} was not found`);
   if (!res.ok) throw new Error(`${api}/v1/datasets/${qualified}: ${res.status}`);
   const d = (await res.json()) as Partial<Dataset> | null;
@@ -74,7 +74,8 @@ export const lookup = async (api: string, qualified: string, token: string | nul
   return d as Dataset;
 };
 
-const bearer = (token: string): Record<string, string> => ({ Authorization: `Bearer ${token}` });
+const bearer = (token: string | null): RequestInit | undefined =>
+  token === null ? undefined : { headers: { Authorization: `Bearer ${token}` } };
 
 /** Parquet files sit next to the catalog: .../ducklake.duckdb → .../ducklake.duckdb.files/ */
 export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")[0]}.files/`;
@@ -85,7 +86,7 @@ export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")
  */
 const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string | null): Promise<void> => {
   const url = d.versioned_catalog_url ?? d.catalog_url;
-  const res = await fetch(url, token === null ? undefined : { headers: bearer(token) });
+  const res = await fetch(url, bearer(token));
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   // One file per alias: an alias is attached once per DuckDB, while one dataset can be attached
   // under two aliases, and DuckDB refuses to attach one path twice.
@@ -167,10 +168,11 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   const declared = aliases(datasets);
   const auth = async (): Promise<string | null> => (token === undefined ? null : typeof token === "string" ? token : await token());
   const rows = new Map<string, Promise<Dataset>>();
-  const row = (qualified: string): Promise<Dataset> => {
+  /** The dataset row, looked up once. Pass the token when the caller has already asked for it. */
+  const row = (qualified: string, token?: Promise<string | null>): Promise<Dataset> => {
     const p =
       rows.get(qualified) ??
-      auth()
+      (token ?? auth())
         .then((t) => lookup(apiUrl, qualified, t))
         .catch((e: unknown) => {
           rows.delete(qualified);
@@ -183,15 +185,14 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   /** Declared aliases the SQL references. Other three-part names are left to DuckDB (alias.column.field). */
   const used = (sql: string): string[] => datasetsIn(sql).filter((a) => declared.has(a));
 
-  const ensure = async (db: AsyncDuckDB, alias: string, t: string | null): Promise<void> => {
+  const ensure = async (e: Engine, db: AsyncDuckDB, alias: string, t: string | null): Promise<void> => {
     const qualified = declared.get(alias) ?? "";
-    const e = engine(wasmUrl);
     const prev = e.attached.get(alias);
     if (prev && prev.qualified !== qualified)
       throw new Error(`Alias ${alias} is already used for ${prev.qualified} on this page. Declare ${qualified} with another alias`);
     const done =
       prev?.done ??
-      row(qualified)
+      row(qualified, Promise.resolve(t))
         .then((d) => attach(db, alias, d, t))
         .catch((err: unknown) => {
           e.attached.delete(alias);
@@ -202,14 +203,14 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   };
 
   const sql = async <T,>(query: string): Promise<T[]> => {
-    const [db, t] = await Promise.all([engine(wasmUrl).db(), auth()]);
+    const eng = engine(wasmUrl);
     const aliasesUsed = used(query);
-    if (t !== null) {
-      // Data files are read by the DuckDB worker, so hand it the token and the hosts it may go to.
-      const ds = await Promise.all(aliasesUsed.map((a) => row(declared.get(a) ?? "")));
-      setAuth(db, t, [...new Set(ds.map((d) => new URL(d.catalog_url).origin))]);
-    }
-    await Promise.all(aliasesUsed.map((a) => ensure(db, a, t)));
+    // Look up the datasets while DuckDB starts. The token function is called once per query.
+    const token = auth();
+    const [db, t, ds] = await Promise.all([eng.db(), token, Promise.all(aliasesUsed.map((a) => row(declared.get(a) ?? "", token)))]);
+    // Data files are read by the DuckDB worker, so hand it the token and the hosts it may go to.
+    if (t !== null) setAuth(db, t, [...new Set(ds.map((d) => new URL(d.catalog_url).origin))]);
+    await Promise.all(aliasesUsed.map((a) => ensure(eng, db, a, t)));
     const run = async (): Promise<T[]> => {
       const conn = await db.connect();
       try {
