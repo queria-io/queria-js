@@ -71,7 +71,7 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
 <queria-table datasets="queria/e_stat" sql="SELECT ..."></queria-table>
 ```
 
-Shows up to 100 rows (`limit` changes it). In JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
+Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
 
 ## Maps
 
