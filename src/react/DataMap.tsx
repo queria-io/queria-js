@@ -11,7 +11,7 @@ type Props = { layer: MapLayer; className?: string } & MapRenderOptions &
 export const DataMap = ({ layer, className = "queria-map", style, theme, ...data }: Props) => {
   const conn = useQueria();
   const el = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<{ sources: Dataset[]; error?: unknown }>({ sources: [] });
+  const [state, setState] = useState<{ sources: Dataset[]; url?: string; error?: unknown }>({ sources: [] });
   const sql = "sql" in data ? data.sql : null;
   const rows = "rows" in data ? data.rows : null;
   // Inline objects are new on every render of the parent, so compare them by content.
@@ -24,11 +24,13 @@ export const DataMap = ({ layer, className = "queria-map", style, theme, ...data
     const box = document.createElement("div");
     box.style.height = "100%";
     el.current?.append(box);
-    const load = sql === null ? Promise.all([rows ?? [], conn.sources()]) : Promise.all([conn.sql(sql), conn.sources(sql)]);
+    const load = sql === null
+      ? Promise.all([rows ?? [], conn.sources(), undefined])
+      : Promise.all([conn.sql(sql), conn.sources(sql), conn.shareUrl(sql)]);
     load
-      .then(async ([values, sources]) => {
+      .then(async ([values, sources, url]) => {
         if (!alive) return;
-        setState({ sources });
+        setState({ sources, url });
         ({ finalize } = await renderMap(box, layer, values, { style, theme }));
         if (!alive) finalize();
       })
@@ -46,7 +48,7 @@ export const DataMap = ({ layer, className = "queria-map", style, theme, ...data
     <div className={className}>
       {state.error ? <p className="queria-note">{state.error instanceof Error ? state.error.message : String(state.error)}</p> : null}
       <div ref={el} style={{ height: "var(--queria-map-height, 400px)" }} />
-      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources, sql === null ? undefined : { sql, url: conn.reportUrl(sql) }) }} />
+      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources, sql !== null && state.url ? { sql, url: state.url } : undefined) }} />
     </div>
   );
 };

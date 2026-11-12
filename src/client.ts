@@ -41,8 +41,11 @@ export type Connection = {
    * Without SQL (rows computed elsewhere), every declared dataset.
    */
   sources: (sql?: string) => Promise<Dataset[]>;
-  /** A queria.io link that opens the SQL in a new report, with the datasets it reads, so readers can rerun and change it. */
-  reportUrl: (sql: string) => string;
+  /**
+   * A queria.io link that opens the SQL (drawn with the Vega-Lite spec, if given) with the datasets it reads, so readers
+   * can rerun and change it. No login is needed to open it.
+   */
+  shareUrl: (sql: string, spec?: object) => Promise<string>;
 };
 
 const API = "https://api.queria.io";
@@ -246,14 +249,30 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   const sources = (query?: string): Promise<Dataset[]> =>
     Promise.all((query === undefined ? [...declared.keys()] : used(query)).map((a) => row(declared.get(a) ?? "")));
 
-  const reportUrl = (query: string): string => reportLink(query, used(query).map((a) => [a, declared.get(a) ?? ""]));
+  const shareUrl = (query: string, spec?: object): Promise<string> =>
+    shareLink(sharePayload(query, used(query).map((alias) => ({ alias, qualifiedName: declared.get(alias) ?? "" })), spec));
 
-  return { sql, sources, reportUrl };
+  return { sql, sources, shareUrl };
 };
 
-/** The queria.io page that starts a report from SQL. Each dataset is declared as "handle/name as alias". */
-export const reportLink = (sql: string, datasets: readonly (readonly [string, string])[], site = "https://queria.io"): string =>
-  `${site}/reports/new?${new URLSearchParams([["sql", sql], ...datasets.map(([alias, q]): [string, string] => ["dataset", `${q} as ${alias}`])])}`;
+/** What queria.io/s opens: the result as a table, or drawn with the spec from a view of the SQL. */
+export const sharePayload = (sql: string, datasets: readonly { alias: string; qualifiedName: string }[], spec?: object) =>
+  spec
+    ? { cells: [{ type: "plot", chart: { ...spec, data: { name: "result" } } }], views: [{ name: "result", sql }], datasets }
+    : { cells: [{ type: "table", sql }], datasets };
+
+/** Deflate the text and write it as URL-safe Base64, as queria.io/s reads it. */
+const deflate64 = async (text: string): Promise<string> => {
+  const deflated = new Blob([text]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+  const bytes = new Uint8Array(await new Response(deflated).arrayBuffer());
+  return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+};
+
+/** The queria.io page that runs the SQL of the payload and shows the result. It needs no login. */
+export const shareLink = async (payload: object, site = "https://queria.io"): Promise<string> => `${site}/s#${await deflate64(JSON.stringify(payload))}`;
 
 /** Read a list of datasets from an HTML attribute: "queria/e_stat queria/jma" or "a=alice/x b=bob/x". */
 export const parseDatasets = (attr: string): Declared => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, connect, dataPath, hints, lookup, parseDatasets, reportLink } from "./client.js";
+import { aliases, connect, dataPath, hints, lookup, parseDatasets, shareLink, sharePayload } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -94,11 +94,22 @@ describe("hints", () => {
   it("adds nothing to other errors", () => expect(hints("Parser Error: syntax error", [e_stat], [])).toEqual([]));
 });
 
-describe("reportLink", () => {
-  it("passes the SQL and the declared datasets to a new report", () => {
-    const url = new URL(reportLink("SELECT 1 FROM e_stat.a.b", [["e_stat", "queria/e_stat"]]));
-    expect(url.origin + url.pathname).toBe("https://queria.io/reports/new");
-    expect(url.searchParams.get("sql")).toBe("SELECT 1 FROM e_stat.a.b");
-    expect(url.searchParams.getAll("dataset")).toEqual(["queria/e_stat as e_stat"]);
+const inflate = async (hash: string): Promise<unknown> => {
+  const bytes = Uint8Array.from(atob(hash.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  return JSON.parse(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text());
+};
+
+describe("shareLink", () => {
+  const datasets = [{ alias: "e_stat", qualifiedName: "queria/e_stat" }];
+  it("opens the SQL and its datasets on queria.io/s", async () => {
+    const url = new URL(await shareLink(sharePayload("SELECT 1 FROM e_stat.a.b", datasets)));
+    expect(url.origin + url.pathname).toBe("https://queria.io/s");
+    expect(await inflate(url.hash.slice(1))).toEqual({ cells: [{ type: "table", sql: "SELECT 1 FROM e_stat.a.b" }], datasets });
   });
+  it("draws a chart from a view of the SQL", () =>
+    expect(sharePayload("SELECT 1", [], { mark: "bar" })).toEqual({
+      cells: [{ type: "plot", chart: { mark: "bar", data: { name: "result" } } }],
+      views: [{ name: "result", sql: "SELECT 1" }],
+      datasets: [],
+    }));
 });

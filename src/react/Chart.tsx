@@ -10,7 +10,7 @@ type Props = { spec: ChartSpec; className?: string; theme?: Tone; highlight?: un
 export const Chart = ({ spec, className = "queria-chart", theme, highlight, ...data }: Props) => {
   const conn = useQueria();
   const el = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<{ sources: Dataset[]; error?: unknown }>({ sources: [] });
+  const [state, setState] = useState<{ sources: Dataset[]; url?: string; error?: unknown }>({ sources: [] });
   const sql = "sql" in data ? data.sql : null;
   const rows = "rows" in data ? data.rows : null;
   // Compare the spec by content: a spec written inline is a new object on every render of the parent.
@@ -19,11 +19,13 @@ export const Chart = ({ spec, className = "queria-chart", theme, highlight, ...d
   useEffect(() => {
     let alive = true;
     let finalize: (() => void) | undefined;
-    const load = sql === null ? Promise.all([rows ?? [], conn.sources()]) : Promise.all([conn.sql(sql), conn.sources(sql)]);
+    const load = sql === null
+      ? Promise.all([rows ?? [], conn.sources(), undefined])
+      : Promise.all([conn.sql(sql), conn.sources(sql), conn.shareUrl(sql, spec)]);
     load
-      .then(async ([values, sources]) => {
+      .then(async ([values, sources, url]) => {
         if (!alive || !el.current) return;
-        setState({ sources });
+        setState({ sources, url });
         ({ finalize } = await renderChart(el.current, spec, values, { theme, highlight }));
         if (!alive) finalize();
       })
@@ -43,7 +45,7 @@ export const Chart = ({ spec, className = "queria-chart", theme, highlight, ...d
     <div className={className}>
       {state.error ? <p className="queria-note">{state.error instanceof Error ? state.error.message : String(state.error)}</p> : null}
       <div ref={el} />
-      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources, sql === null ? undefined : { sql, url: conn.reportUrl(sql) }) }} />
+      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources, sql !== null && state.url ? { sql, url: state.url } : undefined) }} />
     </div>
   );
 };
