@@ -66,7 +66,7 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
   layer='{"area": "city", "code": "lg_code", "color": "population", "label": "lg_code"}'></queria-map>
 ```
 
-`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each. `label` names a row on hover. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. The package links maplibre-gl's CSS unless the page already does. The map height is the CSS variable `--queria-map-height` (400px by default).
+`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. The package links maplibre-gl's CSS unless the page already does. The map height is the CSS variable `--queria-map-height` (400px by default).
 
 With a bundler, charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 

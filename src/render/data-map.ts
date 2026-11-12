@@ -1,16 +1,18 @@
-import type { GeoJSONSourceSpecification, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
+import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import type { Rows } from "./chart.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
 
 /**
  * How rows are put on the map: by area code (the shapes come from Queria's boundary tiles) or by longitude and latitude.
- * The values are column names. `color` colors by a column, `label` names a row on hover.
+ * The values are column names. `color` colors by a column, `label` names a row on hover or tap.
  */
 export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: string }) & {
   color?: string;
   label?: string;
   opacity?: number;
+  /** Show what the colors mean. On by default when `color` is set. */
+  legend?: boolean;
 };
 
 /** Queria's map styles. They keep their URL when the tiles are rebuilt, and hold the boundary sources. */
@@ -42,26 +44,63 @@ const CATEGORIES = ["#2563eb", "#ea580c", "#16a34a", "#dc2626", "#9333ea", "#089
 
 const hex = (rgb: number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 
+/** What the colors mean: a range of numbers, or one color per value. */
+export type Legend =
+  | { column: string; min: number; max: number }
+  | { column: string; items: { label: string; color: string }[]; more: number };
+
 /**
- * A color for each row. Numbers run from light to dark between the smallest and largest value;
+ * A color for each row, and the legend. Numbers run from light to dark between the smallest and largest value;
  * other values get one color each, in order of first appearance.
  */
-export const colorsOf = (rows: Rows, column: string | undefined): string[] => {
-  if (column === undefined) return rows.map(() => BASE);
+export const colorScale = (rows: Rows, column: string | undefined): { colors: string[]; legend: Legend | null } => {
+  if (column === undefined) return { colors: rows.map(() => BASE), legend: null };
   const values = rows.map((r) => r[column]);
   const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   if (nums.length > 0 && nums.length === values.filter((v) => v !== null && v !== undefined).length) {
     // Spreading a large array into Math.min overflows the stack.
     const min = nums.reduce((a, b) => Math.min(a, b));
     const max = nums.reduce((a, b) => Math.max(a, b));
-    return values.map((v) => {
+    const colors = values.map((v) => {
       if (typeof v !== "number" || !Number.isFinite(v)) return "#d4d4d4";
       const t = max === min ? 1 : (v - min) / (max - min);
       return hex(LOW.map((l, i) => l + (HIGH[i] - l) * t));
     });
+    return { colors, legend: { column, min, max } };
   }
   const order = [...new Set(values.map(String))];
-  return values.map((v) => CATEGORIES[order.indexOf(String(v)) % CATEGORIES.length]);
+  const colorOf = (label: string): string => CATEGORIES[order.indexOf(label) % CATEGORIES.length];
+  return {
+    colors: values.map((v) => colorOf(String(v))),
+    // Colors repeat after the tenth value, so the legend lists the first ten.
+    legend: { column, items: order.slice(0, CATEGORIES.length).map((label) => ({ label, color: colorOf(label) })), more: Math.max(0, order.length - CATEGORIES.length) },
+  };
+};
+
+const div = (style: string, text = ""): HTMLDivElement => Object.assign(document.createElement("div"), { textContent: text, style: style });
+
+/** The legend drawn over the map's top left corner. Labels come from the data, so they are set as text. */
+export const legendElement = (legend: Legend, theme: "light" | "dark"): HTMLElement => {
+  const box = div(
+    `position:absolute;top:8px;left:8px;z-index:2;max-width:45%;padding:6px 8px;border-radius:4px;font:12px/1.4 sans-serif;${theme === "dark" ? "background:rgba(23,23,23,.85);color:#e5e5e5" : "background:rgba(255,255,255,.9);color:#262626"}`,
+  );
+  box.className = "queria-legend";
+  box.append(div("font-weight:600;margin-bottom:2px", legend.column));
+  if ("min" in legend) {
+    box.append(
+      div(`width:120px;height:8px;border-radius:2px;background:linear-gradient(to right,${hex(LOW)},${hex(HIGH)})`),
+      div("display:flex;justify-content:space-between;gap:8px", ""),
+    );
+    box.lastElementChild?.append(div("", legend.min.toLocaleString()), div("", legend.max.toLocaleString()));
+    return box;
+  }
+  legend.items.forEach(({ label, color }) => {
+    const item = div("display:flex;align-items:center;gap:4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis");
+    item.append(div(`flex:none;width:10px;height:10px;border-radius:2px;background:${color}`), label);
+    box.append(item);
+  });
+  if (legend.more > 0) box.append(div("", `+${legend.more}`));
+  return box;
 };
 
 /** Lines shown on hover: the label, then the colored value. */
@@ -82,7 +121,7 @@ const positionOf = (row: Record<string, unknown>, layer: { lng: string; lat: str
 
 /** Points as GeoJSON. Rows without a valid position are left out. */
 export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: string }): GeoJSONSourceSpecification["data"] => {
-  const colors = colorsOf(rows, layer.color);
+  const { colors } = colorScale(rows, layer.color);
   return {
     type: "FeatureCollection",
     features: rows.flatMap((r, i) => {
@@ -95,7 +134,7 @@ export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: 
 
 /** Color and hover lines by area code. The first row of a code wins. */
 export const areaRows = (rows: Rows, layer: MapLayer & { area: AreaLevel; code: string }): Map<string, { color: string; hover: string }> => {
-  const colors = colorsOf(rows, layer.color);
+  const { colors } = colorScale(rows, layer.color);
   const out = new Map<string, { color: string; hover: string }>();
   rows.forEach((r, i) => {
     const code = areaCode(layer.area, r[layer.code]);
@@ -231,15 +270,21 @@ export const renderMap = async (
       hover = (f) => areas.get(String(f.properties.code))?.hover;
     }
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
-    map.on("mousemove", "queria-rows", (e) => {
+    // Touch screens send no mousemove, so a tap shows the same lines.
+    const show = (e: MapLayerMouseEvent): void => {
       const text = e.features?.[0] ? hover(e.features[0]) : undefined;
-      if (!text) return popup.remove();
+      if (!text) {
+        popup.remove();
+        return;
+      }
       // The text comes from the data, so it is set as text, never as HTML.
       const body = document.createElement("div");
       body.style.whiteSpace = "pre-line";
       body.textContent = text;
       popup.setLngLat(e.lngLat).setDOMContent(body).addTo(map);
-    });
+    };
+    map.on("mousemove", "queria-rows", show);
+    map.on("click", "queria-rows", show);
     map.on("mouseleave", "queria-rows", () => popup.remove());
     const bounds = await boundsOf(map, layer, rows, codes).catch(() => null);
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
@@ -247,5 +292,13 @@ export const renderMap = async (
     map.remove();
     throw e;
   }
-  return { map, finalize: () => map.remove() };
+  const { legend } = colorScale(rows, layer.color);
+  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, theme)) : null;
+  return {
+    map,
+    finalize: () => {
+      legendEl?.remove();
+      map.remove();
+    },
+  };
 };
