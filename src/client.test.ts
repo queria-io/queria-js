@@ -86,5 +86,10 @@ describe("hints", () => {
   it("asks to declare names that look like datasets", () => {
     expect(hints("Binder Error: x", [], ["jma"])).toEqual(["If jma is a dataset, declare it in connect({ datasets })"]);
   });
+  it("names the host of a file DuckDB could not load", () => {
+    expect(hints("IO Error: Failed to load 'https://data.queria.io/x.parquet'", [], [])).toEqual([
+      "Could not reach https://data.queria.io. If the page has a Content Security Policy, allow https://data.queria.io in connect-src",
+    ]);
+  });
   it("adds nothing to other errors", () => expect(hints("Parser Error: syntax error", [e_stat], [])).toEqual([]));
 });

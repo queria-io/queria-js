@@ -1,6 +1,7 @@
 import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
 import { boot, setAuth, withSpatial } from "./boot.js";
 import { datasetsIn, lit } from "./sql.js";
+import { fetchFrom, loadFailureHint } from "./fetch.js";
 
 /** A license of a dataset, as returned by the Queria API. */
 export type License = { id?: string; title?: string; url?: string };
@@ -65,7 +66,7 @@ export const aliases = (declared: Declared): Map<string, string> => {
 
 /** Look up a dataset row. The API returns the catalog URL; the package never builds it. */
 export const lookup = async (api: string, qualified: string, token: string | null = null): Promise<Dataset> => {
-  const res = await fetch(`${api}/v1/datasets/${qualified}`, bearer(token));
+  const res = await fetchFrom(`${api}/v1/datasets/${qualified}`, bearer(token));
   if (res.status === 404) throw new Error(`Dataset ${qualified} was not found`);
   if (!res.ok) throw new Error(`${api}/v1/datasets/${qualified}: ${res.status}`);
   const d = (await res.json()) as Partial<Dataset> | null;
@@ -86,7 +87,7 @@ export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")
  */
 const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string | null): Promise<void> => {
   const url = d.versioned_catalog_url ?? d.catalog_url;
-  const res = await fetch(url, bearer(token));
+  const res = await fetchFrom(url, bearer(token));
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   // One file per alias: an alias is attached once per DuckDB, while one dataset can be attached
   // under two aliases, and DuckDB refuses to attach one path twice.
@@ -114,11 +115,12 @@ export const plain = (v: unknown): unknown => {
 };
 
 /**
- * What to try after an SQL error: declare a dataset the SQL seems to read, or look up the table names
- * on the pages of the datasets it reads.
+ * What to try after an SQL error: declare a dataset the SQL seems to read, allow a host the page blocked,
+ * or look up the table names on the pages of the datasets it reads.
  */
 export const hints = (message: string, used: readonly Dataset[], undeclared: readonly string[]): string[] => [
   ...(undeclared.length ? [`If ${undeclared.join(", ")} is a dataset, declare it in connect({ datasets })`] : []),
+  ...[loadFailureHint(message)].filter((h): h is string => h !== null),
   ...(/Catalog Error: (Table|Schema) with name/i.test(message)
     ? used.flatMap((d) => (d.page_url ? [`Tables of ${d.qualified_name}: ${d.page_url}`] : []))
     : []),
