@@ -16,7 +16,10 @@ describe("attributionHtml", () => {
     expect(html).toContain(">CC BY 4.0</a>");
   });
   it("does not link non-http URLs", () => {
-    expect(attributionHtml([{ qualified_name: "a/b", page_url: "javascript:x", catalog_url: "u" }])).not.toContain("href");
+    expect(attributionHtml([{ qualified_name: "a/b", page_url: "javascript:x", catalog_url: "u" }])).not.toContain("javascript:");
   });
-  it("is empty without datasets", () => expect(attributionHtml([])).toBe(""));
+  it("shows only the logo without datasets", () => {
+    expect(attributionHtml([])).not.toContain("Source");
+    expect(attributionHtml([])).toContain('aria-label="Queria"');
+  });
 });

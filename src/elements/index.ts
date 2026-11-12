@@ -6,6 +6,13 @@ import { esc } from "../render/escape.js";
 import { renderTable } from "../render/table.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
+/** The theme attribute: light, dark, or unset to follow the page's text color. */
+const themeOf = (value: string | null): "light" | "dark" | undefined => (value === "light" || value === "dark" ? value : undefined);
+
+/** The highlight attribute: one value, or a JSON array of values. */
+const highlightOf = (value: string | null): unknown =>
+  value === null || value === "" ? undefined : value.trimStart().startsWith("[") ? JSON.parse(value) : value;
+
 /** A line of text in place of the chart or map. Errors keep their line breaks. */
 const note = (text: string): string =>
   `<p class="queria-note" style="margin:0;white-space:pre-wrap;font:13px/1.5 system-ui,sans-serif;color:#737373">${esc(text)}</p>`;
@@ -67,7 +74,9 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
           this.innerHTML = note("The SQL returned no rows.");
           return;
         }
-        this.innerHTML = `${box}${attributionHtml(sources)}`;
+        const url = sql ? await conn.shareUrl(sql, need === "spec" ? JSON.parse(attr("spec") ?? "{}") : undefined) : null;
+        if (run !== this.#run) return;
+        this.innerHTML = `${box}${attributionHtml(sources, sql && url ? { sql, url } : undefined)}`;
         const { finalize } = await draw(this.firstElementChild as HTMLElement, data, attr);
         if (run === this.#run) this.#finalize = finalize;
         else finalize();
@@ -82,21 +91,22 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
  * Runs the SQL and draws the rows with the Vega-Lite spec, followed by the sources of the datasets.
  * Instead of sql, `rows` takes the rows as JSON, for pages that run the SQL at build time. Declare the datasets the
  * rows came from in `datasets` so their sources are shown.
- * `api-url` replaces the Queria API, for example with a staging host.
+ * `api-url` replaces the Queria API, for example with a staging host. `theme` is light or dark; by default the chart
+ * is dark when the element's text color is light. `highlight` colors one value (or a JSON array of values) purple.
  */
-export class QueriaChart extends dataElement("spec", [], "<div></div>", (box, rows, attr) =>
-  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows),
+export class QueriaChart extends dataElement("spec", ["theme", "highlight"], "<div></div>", (box, rows, attr) =>
+  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, { theme: themeOf(attr("theme")), highlight: highlightOf(attr("highlight")) }),
 ) {}
 
 /**
  * <queria-map datasets="queria/e_stat" sql="..." layer='{"area": "city", "code": "lg_code", "color": "population"}'>
  * Runs the SQL and puts the rows on a map by area code or by lng/lat, followed by the sources of the datasets.
- * `rows`, `api-url` work as on <queria-chart>. `theme` is light or dark; `map-style` takes another MapLibre style URL.
+ * `rows`, `api-url` work as on <queria-chart>. `theme` works as on <queria-chart>; `map-style` takes another MapLibre style URL.
  * The map height is the CSS variable --queria-map-height (400px by default).
  */
 export class QueriaMap extends dataElement("layer", ["theme", "map-style"], '<div style="height:var(--queria-map-height,400px)"></div>', (box, rows, attr) => {
   const style = attr("map-style");
-  return renderMap(box, JSON.parse(attr("layer") ?? "{}"), rows, { theme: attr("theme") === "dark" ? "dark" : "light", ...(style ? { style } : {}) });
+  return renderMap(box, JSON.parse(attr("layer") ?? "{}"), rows, { theme: themeOf(attr("theme")), ...(style ? { style } : {}) });
 }) {}
 
 /**

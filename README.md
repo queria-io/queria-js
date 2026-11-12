@@ -22,6 +22,12 @@ Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded 
        WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-chart>
 ```
 
+Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. In JavaScript, `renderChart(el, spec, rows, { highlight })`.
+
+Under each chart, map and table that ran SQL, a folded "SQL" section shows the query and links to queria.io, where readers can rerun and change it without signing in, and save it as a report. Charts open as charts. In JavaScript, `await q.shareUrl(sql, spec)` returns the link.
+
+Write each chart, map or table as one SQL statement, with its steps as `WITH` clauses. The link then carries everything needed to reproduce it.
+
 In a module script, import the functions from `https://cdn.jsdelivr.net/npm/queria@0.1/+esm`.
 
 ## HTML with a bundler

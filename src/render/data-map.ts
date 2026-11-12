@@ -1,6 +1,6 @@
 import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
-import type { Rows } from "./chart.js";
-import { BASE, CATEGORIES } from "./palette.js";
+import { type Rows, toneOf } from "./chart.js";
+import { BASE, RAMP, SERIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
@@ -39,10 +39,9 @@ export const areaCode = (area: AreaLevel, value: unknown): string | null => {
   return text.length >= digits ? text.slice(0, digits) : text.padStart(digits, "0");
 };
 
-const LOW = [219, 234, 254];
-const HIGH = [29, 78, 216];
+const [LOW, HIGH] = RAMP;
 
-const hex = (rgb: number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
+const hex = (rgb: readonly number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 
 /** What the colors mean: a range of numbers, or one color per value. */
 export type Legend =
@@ -69,11 +68,11 @@ export const colorScale = (rows: Rows, column: string | undefined): { colors: st
     return { colors, legend: { column, min, max } };
   }
   const order = [...new Set(values.map(String))];
-  const colorOf = (label: string): string => CATEGORIES[order.indexOf(label) % CATEGORIES.length];
+  const colorOf = (label: string): string => SERIES[order.indexOf(label) % SERIES.length];
   return {
     colors: values.map((v) => colorOf(String(v))),
     // Colors repeat after the tenth value, so the legend lists the first ten.
-    legend: { column, items: order.slice(0, CATEGORIES.length).map((label) => ({ label, color: colorOf(label) })), more: Math.max(0, order.length - CATEGORIES.length) },
+    legend: { column, items: order.slice(0, SERIES.length).map((label) => ({ label, color: colorOf(label) })), more: Math.max(0, order.length - SERIES.length) },
   };
 };
 
@@ -209,6 +208,7 @@ export const loadMaplibre = async (): Promise<Maplibre> => {
 export type MapRenderOptions = {
   /** A MapLibre style or its URL. By default Queria's style, which has the boundary tiles. */
   style?: StyleSpecification | string;
+  /** Queria's light or dark style. By default, dark when the element's text color is light. */
   theme?: keyof typeof MAP_STYLES;
 };
 
@@ -220,11 +220,12 @@ export const renderMap = async (
   el: HTMLElement,
   layer: MapLayer,
   rows: Rows,
-  { style, theme = "light" }: MapRenderOptions = {},
+  { style, theme }: MapRenderOptions = {},
 ): Promise<{ map: MapLibreMap; finalize: () => void }> => {
   const maplibregl = await loadMaplibre();
   linkCss(maplibregl.getVersion());
-  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[theme], center: [137, 37], zoom: 4 });
+  const tone = theme ?? toneOf(getComputedStyle(el).color);
+  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[tone], center: [137, 37], zoom: 4 });
   try {
     // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to
     // load, leave it drawing, and MapLibre logs them once no listener is left.
@@ -293,7 +294,7 @@ export const renderMap = async (
     throw e;
   }
   const { legend } = colorScale(rows, layer.color);
-  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, theme)) : null;
+  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, tone)) : null;
   return {
     map,
     finalize: () => {
