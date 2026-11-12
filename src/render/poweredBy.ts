@@ -2,5 +2,5 @@ const logo = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8373.1 2008.4
 
 /** Markup of a link that shows the app is built on Queria. */
 export const poweredByHtml = (): string =>
-  '<a class="viz-powered" href="https://queria.io/" target="_blank" rel="noopener">Powered by ' +
+  '<a class="queria-powered" href="https://queria.io/" target="_blank" rel="noopener">Powered by ' +
   `<span role="img" aria-label="Queria" style="display:inline-block;height:1em;width:4.2em;vertical-align:-0.15em">${logo}</span></a>`;

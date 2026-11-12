@@ -1,18 +1,20 @@
-import { sharedQueria } from "../client.js";
+import { connect, parseDatasets } from "../client.js";
+import { attributionHtml } from "../render/attribution.js";
+import { renderChart } from "../render/chart.js";
 import { esc } from "../render/escape.js";
-import { renderLineChart, toSeries } from "../render/lineChart.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
-const num = (v: string | null): number | undefined => (v === null ? undefined : Number(v));
-
 /**
- * <queria-line-chart sql="..." x="year" y="population" by="area" label="...">
- * Runs the SQL and draws one line per distinct value of `by` (or a single line).
+ * <queria-chart datasets="queria/e_stat" sql="..." spec='{"mark": "line", ...}'>
+ * Runs the SQL and draws the rows with the Vega-Lite spec, followed by the sources of the datasets.
+ * Instead of sql, `rows` takes the rows as JSON, for pages that run the SQL at build time.
+ * `api-url` replaces the Queria API, for example with a staging host.
  */
-export class QueriaLineChart extends HTMLElement {
-  static observedAttributes = ["sql", "x", "y", "by", "label", "width", "height"];
+export class QueriaChart extends HTMLElement {
+  static observedAttributes = ["datasets", "sql", "spec", "rows", "api-url"];
   #run = 0;
   #pending = false;
+  #finalize: (() => void) | null = null;
 
   connectedCallback() {
     this.#schedule();
@@ -20,6 +22,11 @@ export class QueriaLineChart extends HTMLElement {
 
   attributeChangedCallback() {
     if (this.isConnected) this.#schedule();
+  }
+
+  disconnectedCallback() {
+    this.#run++;
+    this.#clear();
   }
 
   /** Draw once per task: an upgrade calls attributeChangedCallback for every attribute, then connectedCallback. */
@@ -32,18 +39,27 @@ export class QueriaLineChart extends HTMLElement {
     });
   }
 
+  #clear() {
+    this.#finalize?.();
+    this.#finalize = null;
+  }
+
   async #draw() {
-    const [sql, x, y] = ["sql", "x", "y"].map((a) => this.getAttribute(a));
-    if (!sql || !x || !y) return;
+    const [datasets, sql, spec, rows] = ["datasets", "sql", "spec", "rows"].map((a) => this.getAttribute(a));
+    if (!spec || (!rows && !sql)) return;
     const run = ++this.#run;
-    this.innerHTML = '<p class="viz-note">Loading…</p>';
+    this.#clear();
+    this.innerHTML = '<p class="queria-note">Loading…</p>';
     try {
-      const rows = await sharedQueria().query(sql);
+      const conn = sql ? connect({ datasets: parseDatasets(datasets ?? ""), apiUrl: this.getAttribute("api-url") ?? undefined }) : null;
+      const [data, sources] = conn && sql ? await Promise.all([conn.sql(sql), conn.sources(sql)]) : [JSON.parse(rows ?? "[]"), []];
       if (run !== this.#run) return;
-      const series = toSeries(rows, { x, y, by: this.getAttribute("by") ?? undefined, label: this.getAttribute("label") ?? y });
-      renderLineChart(this, series, { width: num(this.getAttribute("width")), height: num(this.getAttribute("height")) });
+      this.innerHTML = `<div></div>${attributionHtml(sources)}`;
+      const finalize = await renderChart(this.firstElementChild as HTMLElement, JSON.parse(spec), data);
+      if (run === this.#run) this.#finalize = finalize;
+      else finalize();
     } catch (e) {
-      if (run === this.#run) this.innerHTML = `<p class="viz-note">${esc(String(e))}</p>`;
+      if (run === this.#run) this.innerHTML = `<p class="queria-note">${esc(String(e))}</p>`;
     }
   }
 }
@@ -55,7 +71,7 @@ export class QueriaPoweredBy extends HTMLElement {
   }
 }
 
-const elements = { "queria-line-chart": QueriaLineChart, "queria-powered-by": QueriaPoweredBy };
+const elements = { "queria-chart": QueriaChart, "queria-powered-by": QueriaPoweredBy };
 
 /** Register the custom elements. Safe to call more than once. */
 export const defineElements = (): void =>
@@ -63,7 +79,7 @@ export const defineElements = (): void =>
 
 declare global {
   interface HTMLElementTagNameMap {
-    "queria-line-chart": QueriaLineChart;
+    "queria-chart": QueriaChart;
     "queria-powered-by": QueriaPoweredBy;
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "queria",
   "version": "0.0.0-semantic-release",
-  "description": "Query and visualize Queria open data in the browser with DuckDB WASM and MapLibre",
+  "description": "Query and visualize Queria open data in the browser with DuckDB WASM, Vega-Lite and MapLibre",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -47,13 +47,25 @@
   },
   "peerDependencies": {
     "maplibre-gl": ">=4",
-    "react": ">=18"
+    "react": ">=18",
+    "vega": ">=6",
+    "vega-lite": ">=6",
+    "vega-embed": ">=7"
   },
   "peerDependenciesMeta": {
     "maplibre-gl": {
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "vega": {
+      "optional": true
+    },
+    "vega-lite": {
+      "optional": true
+    },
+    "vega-embed": {
       "optional": true
     }
   },
@@ -65,6 +77,9 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^5.9.3",
+    "vega": "^6.4.0",
+    "vega-embed": "^7.3.0",
+    "vega-lite": "^6.5.0",
     "vite": "^6.4.6",
     "vitest": "^4.1.0"
   },

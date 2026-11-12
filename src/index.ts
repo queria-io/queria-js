@@ -1,4 +1,12 @@
-export { configureQueria, createQueria, plain, sharedQueria, type Queria, type QueriaOptions } from "./client.js";
-export { datasetsIn, lit } from "./sql.js";
-export { geocode, type Place } from "./geocoder.js";
+export {
+  closeAll,
+  connect,
+  plain,
+  type Connection,
+  type ConnectOptions,
+  type Dataset,
+  type Declared,
+  type License,
+} from "./client.js";
+export { lit } from "./sql.js";
 export * from "./render/index.js";
