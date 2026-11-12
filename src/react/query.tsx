@@ -1,22 +1,20 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
-import { createQueria, type Queria, type QueriaOptions, sharedQueria } from "../client.js";
+import { type Connection, type ConnectOptions, connect } from "../client.js";
 
-const Context = createContext<Queria | null>(null);
+const Context = createContext<Connection | null>(null);
 
-/** Use a client with other options for the components below. Without a provider, the shared client is used. */
-export const QueriaProvider = ({ children, ...options }: QueriaOptions & { children: ReactNode }) => {
-  const client = useMemo(() => createQueria(options), [options.dataUrl, options.wasmUrl]);
-  // Stop the DuckDB worker when the options change or the provider unmounts.
-  useEffect(
-    () => () => {
-      client.close();
-    },
-    [client],
-  );
-  return <Context.Provider value={client}>{children}</Context.Provider>;
+/** Declare the datasets for the components below: <QueriaProvider datasets={["queria/e_stat"]}>. */
+export const QueriaProvider = ({ children, ...options }: ConnectOptions & { children: ReactNode }) => {
+  const key = JSON.stringify(options);
+  const conn = useMemo(() => connect(options), [key]);
+  return <Context.Provider value={conn}>{children}</Context.Provider>;
 };
 
-export const useQueria = (): Queria => useContext(Context) ?? sharedQueria();
+export const useQueria = (): Connection => {
+  const conn = useContext(Context);
+  if (!conn) throw new Error("Wrap the component in <QueriaProvider datasets={[...]}>");
+  return conn;
+};
 
 export type QueryState<T> =
   | { status: "idle" }
@@ -26,7 +24,7 @@ export type QueryState<T> =
 
 /** Run SQL and re-run it when the SQL changes. Pass null to skip; the state is then idle. */
 export const useQuery = <T = Record<string, unknown>,>(sql: string | null): QueryState<T> => {
-  const { query } = useQueria();
+  const conn = useQueria();
   const [state, setState] = useState<QueryState<T>>(sql === null ? { status: "idle" } : { status: "loading" });
   useEffect(() => {
     if (sql === null) {
@@ -35,13 +33,13 @@ export const useQuery = <T = Record<string, unknown>,>(sql: string | null): Quer
     }
     let alive = true;
     setState({ status: "loading" });
-    query<T>(sql).then(
+    conn.sql<T>(sql).then(
       (rows) => alive && setState({ status: "done", rows }),
       (error: unknown) => alive && setState({ status: "error", error }),
     );
     return () => {
       alive = false;
     };
-  }, [query, sql]);
+  }, [conn, sql]);
   return state;
 };

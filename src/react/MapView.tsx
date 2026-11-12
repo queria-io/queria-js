@@ -12,7 +12,7 @@ type Props = {
 };
 
 /** A MapLibre map. Passing a new style applies only the diff. */
-export const MapView = ({ style, onReady, options, className = "viz-map", children }: Props) => {
+export const MapView = ({ style, onReady, options, className = "queria-map", children }: Props) => {
   const container = useRef<HTMLDivElement>(null);
   const handle = useRef<MapHandle | null>(null);
 
