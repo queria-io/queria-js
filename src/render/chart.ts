@@ -175,19 +175,33 @@ export type ChartOptions = {
   theme?: Tone;
   /** By default svg, and canvas when there are more than 5,000 rows in all. */
   renderer?: "svg" | "canvas";
-  /**
-   * vega-embed's default export and vega-interpreter's expressionInterpreter, for pages that load their own versions.
-   * By default they are imported on first use.
-   */
-  vega?: { embed: Embed; expressionInterpreter: EmbedOptions["expr"] };
 };
 
-type Embed = (el: HTMLElement, spec: VisualizationSpec, options: EmbedOptions) => Promise<Result>;
-
-const loadVega = async (): Promise<NonNullable<ChartOptions["vega"]>> => {
-  const [e, i] = await Promise.all([import("vega-embed"), import("vega-interpreter")]);
-  return { embed: e.default, expressionInterpreter: i.expressionInterpreter };
+type Drawer = {
+  embed: (el: HTMLElement, spec: VisualizationSpec, options: EmbedOptions) => Promise<Result>;
+  expressionInterpreter: EmbedOptions["expr"];
 };
+
+let drawer: Promise<Drawer> | undefined;
+
+const loadDrawer = (): Promise<Drawer> =>
+  (drawer ??= Promise.all([import("vega-embed"), import("vega-interpreter")]).then(
+    ([e, i]) => ({ embed: e.default, expressionInterpreter: i.expressionInterpreter }),
+    // Try again on the next chart when the network failed
+    (e: unknown) => {
+      drawer = undefined;
+      throw e;
+    },
+  ));
+
+/**
+ * Start loading what draws charts, so that the first renderChart does not wait for it. Call it while the data loads.
+ */
+export const preloadChart = (): Promise<void> =>
+  loadDrawer().then(
+    () => undefined,
+    () => undefined,
+  );
 
 const CANVAS_ABOVE = 5000;
 
@@ -195,7 +209,7 @@ const rowCount = (data: Rows | Readonly<Record<string, Rows>>): number =>
   isRows(data) ? data.length : Object.values(data).reduce((n, rows) => n + rows.length, 0);
 
 /**
- * Draw a Vega-Lite chart. vega-embed and vega-interpreter are loaded on first use. Expressions are run by the
+ * Draw a Vega-Lite chart. What draws it is loaded on first use, or earlier with preloadChart. Expressions are run by the
  * interpreter, so charts draw on pages whose Content Security Policy has no unsafe-eval.
  * Returns the Vega view, a function that removes the chart, and whether a highlighted value was found.
  * Sources and licenses are not drawn here; the elements and React components add them under the chart.
@@ -204,11 +218,11 @@ export const renderChart = async (
   el: HTMLElement,
   spec: ChartSpec,
   data: Rows | Readonly<Record<string, Rows>>,
-  { config, actions = false, i18n, theme, renderer, highlight, vega }: ChartOptions = {},
+  { config, actions = false, i18n, theme, renderer, highlight }: ChartOptions = {},
 ): Promise<Pick<Result, "view" | "finalize"> & { highlighted: boolean }> => {
   const style = getComputedStyle(el);
   const tone = theme ?? toneOf(style.color);
-  const { embed, expressionInterpreter } = vega ?? (await loadVega());
+  const { embed, expressionInterpreter } = await loadDrawer();
   const all = isRows(data) ? data : Object.values(data).flat();
   const shown = highlight === undefined ? spec : withHighlight(spec, all, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
   const { view, finalize } = await embed(el, withData(shown, data) as VisualizationSpec, {
