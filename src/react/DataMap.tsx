@@ -20,12 +20,16 @@ export const DataMap = ({ layer, className = "queria-map", style, theme, ...data
   useEffect(() => {
     let alive = true;
     let finalize: (() => void) | undefined;
+    // Each map gets its own element: a map removed after the next one started takes its class off its element.
+    const box = document.createElement("div");
+    box.style.height = "100%";
+    el.current?.append(box);
     const load = sql === null ? Promise.all([rows ?? [], conn.sources()]) : Promise.all([conn.sql(sql), conn.sources(sql)]);
     load
       .then(async ([values, sources]) => {
-        if (!alive || !el.current) return;
+        if (!alive) return;
         setState({ sources });
-        ({ finalize } = await renderMap(el.current, layer, values, { style, theme }));
+        ({ finalize } = await renderMap(box, layer, values, { style, theme }));
         if (!alive) finalize();
       })
       .catch((error: unknown) => {
@@ -34,6 +38,7 @@ export const DataMap = ({ layer, className = "queria-map", style, theme, ...data
     return () => {
       alive = false;
       finalize?.();
+      box.remove();
     };
   }, [conn, sql, rows, key]);
 

@@ -26,7 +26,7 @@ describe("colorsOf", () => {
 
 describe("pointFeatures", () => {
   it("leaves out rows without a position", () => {
-    const data = pointFeatures([{ x: 139.7, y: 35.6, n: "a" }, { x: null, y: 35 }], { lng: "x", lat: "y", label: "n" });
+    const data = pointFeatures([{ x: 139.7, y: 35.6, n: "a" }, { x: null, y: 35 }, { x: "", y: 35 }], { lng: "x", lat: "y", label: "n" });
     expect(data).toMatchObject({ features: [{ geometry: { coordinates: [139.7, 35.6] }, properties: { hover: "a" } }] });
   });
 });

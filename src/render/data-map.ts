@@ -1,4 +1,4 @@
-import type { GeoJSONSourceSpecification, Map, StyleSpecification } from "maplibre-gl";
+import type { GeoJSONSourceSpecification, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import type { Rows } from "./chart.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
@@ -51,7 +51,9 @@ export const colorsOf = (rows: Rows, column: string | undefined): string[] => {
   const values = rows.map((r) => r[column]);
   const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   if (nums.length > 0 && nums.length === values.filter((v) => v !== null && v !== undefined).length) {
-    const [min, max] = [Math.min(...nums), Math.max(...nums)];
+    // Spreading a large array into Math.min overflows the stack.
+    const min = nums.reduce((a, b) => Math.min(a, b));
+    const max = nums.reduce((a, b) => Math.max(a, b));
     return values.map((v) => {
       if (typeof v !== "number" || !Number.isFinite(v)) return "#d4d4d4";
       const t = max === min ? 1 : (v - min) / (max - min);
@@ -69,23 +71,32 @@ const hoverLines = (row: Record<string, unknown>, layer: MapLayer): string[] =>
     layer.color === undefined ? null : `${layer.color}: ${typeof row[layer.color] === "number" ? (row[layer.color] as number).toLocaleString() : String(row[layer.color])}`,
   ].filter((l): l is string => !!l);
 
+const coordinate = (v: unknown): number =>
+  typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : Number.NaN;
+
+/** The row's [lng, lat], or null when either is missing or not a number. */
+const positionOf = (row: Record<string, unknown>, layer: { lng: string; lat: string }): [number, number] | null => {
+  const [lng, lat] = [coordinate(row[layer.lng]), coordinate(row[layer.lat])];
+  return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+};
+
 /** Points as GeoJSON. Rows without a valid position are left out. */
 export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: string }): GeoJSONSourceSpecification["data"] => {
   const colors = colorsOf(rows, layer.color);
   return {
     type: "FeatureCollection",
     features: rows.flatMap((r, i) => {
-      const [lng, lat] = [Number(r[layer.lng]), Number(r[layer.lat])];
-      if (r[layer.lng] === null || r[layer.lat] === null || !Number.isFinite(lng) || !Number.isFinite(lat)) return [];
-      return [{ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: [lng, lat] }, properties: { color: colors[i], hover: hoverLines(r, layer).join("\n") } }];
+      const position = positionOf(r, layer);
+      if (position === null) return [];
+      return [{ type: "Feature" as const, geometry: { type: "Point" as const, coordinates: position }, properties: { color: colors[i], hover: hoverLines(r, layer).join("\n") } }];
     }),
   };
 };
 
 /** Color and hover lines by area code. The first row of a code wins. */
-export const areaRows = (rows: Rows, layer: MapLayer & { area: AreaLevel; code: string }): globalThis.Map<string, { color: string; hover: string }> => {
+export const areaRows = (rows: Rows, layer: MapLayer & { area: AreaLevel; code: string }): Map<string, { color: string; hover: string }> => {
   const colors = colorsOf(rows, layer.color);
-  const out = new globalThis.Map<string, { color: string; hover: string }>();
+  const out = new Map<string, { color: string; hover: string }>();
   rows.forEach((r, i) => {
     const code = areaCode(layer.area, r[layer.code]);
     if (code !== null && !out.has(code)) out.set(code, { color: colors[i], hover: hoverLines(r, layer).join("\n") });
@@ -100,17 +111,36 @@ const union = (boxes: Bbox[]): Bbox | null =>
     ? null
     : boxes.reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
 
+const bboxIndexes = new Map<string, Promise<Record<string, Bbox>>>();
+
+/** The bbox index at the URL, fetched once per page. */
+const bboxIndex = (url: string): Promise<Record<string, Bbox>> => {
+  const found = bboxIndexes.get(url);
+  if (found) return found;
+  const p = fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error(`${url}: ${res.status}`);
+      return res.json() as Promise<Record<string, Bbox>>;
+    })
+    .catch((e: unknown) => {
+      bboxIndexes.delete(url);
+      throw e;
+    });
+  bboxIndexes.set(url, p);
+  return p;
+};
+
 /** The bounds of the points, or of the areas from the style's bbox index (small areas use their city). */
-const boundsOf = async (map: Map, layer: MapLayer, rows: Rows, codes: string[]): Promise<Bbox | null> => {
+const boundsOf = async (map: MapLibreMap, layer: MapLayer, rows: Rows, codes: string[]): Promise<Bbox | null> => {
   if ("lng" in layer) {
-    const pts = rows.map((r) => [Number(r[layer.lng]), Number(r[layer.lat])]).filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
-    return union(pts.map(([x, y]) => [x, y, x, y]));
+    return union(rows.flatMap((r): Bbox[] => {
+      const p = positionOf(r, layer);
+      return p ? [[p[0], p[1], p[0], p[1]]] : [];
+    }));
   }
   const url = (map.getStyle().metadata as Record<string, unknown> | undefined)?.["queria:bbox"];
   if (typeof url !== "string") return null;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const index = (await res.json()) as Record<string, Bbox>;
+  const index = await bboxIndex(url);
   return union(codes.flatMap((c): Bbox[] => {
       const box = index[layer.area === "small_area" ? c.slice(0, 5) : c];
       return box ? [box] : [];
@@ -132,16 +162,17 @@ export const renderMap = async (
   layer: MapLayer,
   rows: Rows,
   { style, theme = "light" }: MapRenderOptions = {},
-): Promise<{ map: Map; finalize: () => void }> => {
+): Promise<{ map: MapLibreMap; finalize: () => void }> => {
   const { default: maplibregl } = await import("maplibre-gl");
   const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[theme], center: [137, 37], zoom: 4 });
   try {
-    // A tile that fails to load is reported on the map and does not stop it; a style that fails does.
+    // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to
+    // load, leave it drawing, and MapLibre logs them once no listener is left.
     await new Promise<void>((resolve, reject) => {
+      const fail = (e: { error: Error }) => reject(e.error);
+      map.on("error", fail);
+      map.once("style.load", () => map.off("error", fail));
       map.once("load", () => resolve());
-      map.on("error", (e: { error: Error; sourceId?: string }) => {
-        if (!map.loaded() && e.sourceId === undefined) reject(e.error);
-      });
     });
     // Areas go under the first label of the base map, so place names stay readable; points go on top.
     const below = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
