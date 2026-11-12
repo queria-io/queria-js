@@ -27,7 +27,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       # Sets the version in package.json, tags it and creates the GitHub release; npm publishing is the next step
-      - run: npx --yes semantic-release@25.0.9
+      - run: npx --yes -p semantic-release@25.0.9 -p conventional-changelog-conventionalcommits@9.3.1 semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Stage the release on npm. It goes live only after a maintainer approves it on npmjs.com with 2FA
