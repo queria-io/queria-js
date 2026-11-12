@@ -143,6 +143,8 @@ export const renderMap = async (
         if (!map.loaded() && e.sourceId === undefined) reject(e.error);
       });
     });
+    // Areas go under the first label of the base map, so place names stay readable; points go on top.
+    const below = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
     const opacity = layer.opacity ?? ("lng" in layer ? 0.9 : 0.6);
     let codes: string[] = [];
     let hover: (f: { properties: Record<string, unknown> }) => string | undefined;
@@ -173,7 +175,7 @@ export const renderMap = async (
             "fill-opacity": opacity,
             "fill-outline-color": "#ffffff",
           },
-        });
+        }, below);
       hover = (f) => areas.get(String(f.properties.code))?.hover;
     }
     const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
