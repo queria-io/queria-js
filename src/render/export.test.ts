@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import { chartSvg } from "./export.js";
+
+const spec = { mark: "bar", encoding: { x: { field: "name", type: "nominal" }, y: { field: "v", type: "quantitative" } } };
+const rows = [{ name: "a", v: 1 }, { name: "b", v: 2 }];
+const size = (svg: string) => /<svg[^>]*width="(\d+)"[^>]*height="(\d+)"/.exec(svg)?.slice(1).map(Number);
+
+describe("chartSvg", () => {
+  it("draws the chart at the size asked for, on a solid background", async () => {
+    const svg = await chartSvg(spec, rows, { width: 600, height: 300 });
+    expect(size(svg)).toEqual([600, 300]);
+    expect(svg).toContain('fill="#ffffff"');
+    expect(svg).toContain("#a1a1aa");
+  });
+
+  it("colors the highlighted value purple", async () => {
+    expect(await chartSvg(spec, rows, { highlight: "b", theme: "dark" })).toContain("#a985e6");
+  });
+
+  it("names the sources under the chart with the logo", async () => {
+    const svg = await chartSvg(spec, rows, {
+      width: 600,
+      height: 300,
+      sources: [{ qualified_name: "queria/e_stat", title: "e-Stat <統計>", catalog_url: "", licenses: [{ id: "CC-BY-4.0", title: "CC BY 4.0" }] }],
+    });
+    expect(size(svg)).toEqual([600, 300]);
+    expect(svg).toContain("Source: e-Stat &lt;統計&gt; (CC BY 4.0)");
+    expect(svg).toContain('stroke="#7846BE"');
+    expect(svg.match(/<svg/g)).toHaveLength(3);
+  });
+});

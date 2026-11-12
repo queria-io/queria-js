@@ -39,7 +39,7 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
 export type Tone = "light" | "dark";
 
 // base is the color of a single series; accent, the Queria purple, is kept for what the chart highlights.
-const TONES = {
+export const TONES = {
   light: { fg: "#18181b", muted: "#6b6b76", border: "#e4e4e8", base: "#a1a1aa", accent: "#7846be" },
   dark: { fg: "#f4f4f5", muted: "#a1a1aa", border: "#2c2c31", base: "#71717a", accent: "#a985e6" },
 } as const;
