@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withData } from "./chart.js";
+import { fontOf, toneOf, withData } from "./chart.js";
 
 describe("withData", () => {
   it("puts rows into a spec without data", () => {
@@ -19,5 +19,21 @@ describe("withData", () => {
     const out = withData({ hconcat: [] }, rows);
     expect(out).not.toHaveProperty("width");
     expect(Object.isFrozen((out.data as { values: object[] }).values[0])).toBe(false);
+  });
+});
+
+describe("toneOf", () => {
+  it("is dark for light text", () => {
+    expect(toneOf("rgb(250, 250, 250)")).toBe("dark");
+    expect(toneOf("rgb(10, 10, 10)")).toBe("light");
+    expect(toneOf("")).toBe("light");
+  });
+});
+
+describe("fontOf", () => {
+  it("keeps the page's font but not the default serif", () => {
+    expect(fontOf("Geist, sans-serif")).toBe("Geist, sans-serif");
+    expect(fontOf('"Times New Roman"')).toBeUndefined();
+    expect(fontOf("")).toBeUndefined();
   });
 });

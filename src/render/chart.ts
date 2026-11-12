@@ -1,5 +1,4 @@
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
-import { BASE, CATEGORIES } from "./palette.js";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
 export type ChartSpec = VisualizationSpec | Record<string, unknown>;
@@ -36,25 +35,39 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   };
 };
 
-/**
- * The default look: a plain sans-serif font, no frame, grid lines only for numbers, the package's colors,
- * and a tooltip on every mark.
- */
-export const chartTheme: Record<string, unknown> = {
-  font: 'system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif',
-  background: "transparent",
-  view: { stroke: null },
-  range: { category: CATEGORIES },
-  mark: { color: BASE, tooltip: true },
-  bar: { cornerRadiusEnd: 2 },
-  line: { strokeWidth: 2 },
-  point: { filled: true },
-  axis: { grid: false, ticks: false, domainColor: "#a3a3a3", labelColor: "#525252", titleColor: "#404040", labelPadding: 6, titleFontWeight: 500 },
-  // Year and category labels read across instead of being turned on their side.
-  axisX: { labelAngle: 0 },
-  axisQuantitative: { domain: false, grid: true, gridColor: "#e5e5e5" },
-  legend: { labelColor: "#525252", titleColor: "#404040", titleFontWeight: 500 },
-  title: { anchor: "start", fontSize: 14, fontWeight: 600, color: "#171717" },
+export type Tone = "light" | "dark";
+
+// queria.io's foreground, muted and border colors.
+const TONES = {
+  light: { fg: "#0a0a0a", muted: "#737373", border: "#e5e5e5" },
+  dark: { fg: "#fafafa", muted: "#a1a1a1", border: "rgba(255,255,255,0.1)" },
+} as const;
+
+/** The look of charts on queria.io: the page's font, plain axes and colors for a light or dark page. */
+export const chartTheme = (tone: Tone = "light", font = "system-ui, sans-serif"): Record<string, unknown> => {
+  const { fg, muted, border } = TONES[tone];
+  return {
+    background: "transparent",
+    font,
+    view: { stroke: null },
+    title: { color: fg, fontSize: 14, fontWeight: 600, anchor: "start" },
+    axis: { labelColor: muted, titleColor: fg, titleFontWeight: "normal", gridColor: border, domainColor: border, tickColor: border, labelFontSize: 11, titleFontSize: 12 },
+    legend: { labelColor: fg, titleColor: fg, labelFontSize: 11 },
+    header: { labelColor: fg, titleColor: fg },
+    text: { color: fg },
+    rule: { color: muted },
+    mark: { tooltip: true },
+  };
+};
+
+/** The page's font, unless it is the browser's default serif: pages that set no font get a sans-serif. */
+export const fontOf = (family: string): string | undefined =>
+  family === "" || /^("?times new roman"?|"?times"?|serif)$/i.test(family.split(",")[0].trim()) ? undefined : family;
+
+/** Dark when the element's text is light, so the chart follows the page without being told. */
+export const toneOf = (color: string): Tone => {
+  const [r, g, b] = (color.match(/[\d.]+/g) ?? []).map(Number);
+  return r === undefined || g === undefined || b === undefined ? "light" : 0.2126 * r + 0.7152 * g + 0.0722 * b > 128 ? "dark" : "light";
 };
 
 export type ChartOptions = {
@@ -64,7 +77,8 @@ export type ChartOptions = {
   actions?: EmbedOptions["actions"];
   /** Labels of the menu. */
   i18n?: EmbedOptions["i18n"];
-  tooltipTheme?: "light" | "dark";
+  /** Light or dark colors. By default, dark when the element's text color is light. */
+  theme?: Tone;
   /** By default svg, and canvas when there are more than 5,000 rows in all. */
   renderer?: "svg" | "canvas";
 };
@@ -84,8 +98,10 @@ export const renderChart = async (
   el: HTMLElement,
   spec: ChartSpec,
   data: Rows | Readonly<Record<string, Rows>>,
-  { config, actions = false, i18n, tooltipTheme, renderer }: ChartOptions = {},
+  { config, actions = false, i18n, theme, renderer }: ChartOptions = {},
 ): Promise<Pick<Result, "view" | "finalize">> => {
+  const style = getComputedStyle(el);
+  const tone = theme ?? toneOf(style.color);
   const [{ default: embed }, { expressionInterpreter }] = await Promise.all([import("vega-embed"), import("vega-interpreter")]);
   const { view, finalize } = await embed(el, withData(spec, data) as VisualizationSpec, {
     // Read the spec as Vega-Lite even when its $schema says Vega
@@ -95,8 +111,8 @@ export const renderChart = async (
     renderer: renderer ?? (rowCount(data) > CANVAS_ABOVE ? "canvas" : "svg"),
     actions,
     ...(i18n ? { i18n } : {}),
-    config: { ...chartTheme, ...config },
-    ...(tooltipTheme ? { tooltip: { theme: tooltipTheme } } : {}),
+    config: { ...chartTheme(tone, fontOf(style.fontFamily)), ...config },
+    tooltip: { theme: tone },
   });
   return { view, finalize };
 };
