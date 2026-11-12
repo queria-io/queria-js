@@ -28,8 +28,11 @@ export type ConnectOptions = {
 export type Connection = {
   /** Run SQL and return rows as plain objects. Datasets the SQL references are attached on first use. */
   sql: <T = Record<string, unknown>>(sql: string) => Promise<T[]>;
-  /** The declared datasets the SQL references, for showing their sources and licenses. */
-  sources: (sql: string) => Promise<Dataset[]>;
+  /**
+   * The declared datasets the SQL references, for showing their sources and licenses.
+   * Without SQL (rows computed elsewhere), every declared dataset.
+   */
+  sources: (sql?: string) => Promise<Dataset[]>;
 };
 
 const API = "https://api.queria.io";
@@ -85,12 +88,14 @@ export const lookup = async (api: string, qualified: string): Promise<Dataset> =
   const res = await fetch(`${api}/v1/datasets/${qualified}`);
   if (res.status === 404) throw new Error(`Dataset ${qualified} was not found`);
   if (!res.ok) throw new Error(`${api}/v1/datasets/${qualified}: ${res.status}`);
-  return (await res.json()) as Dataset;
+  const d = (await res.json()) as Partial<Dataset> | null;
+  if (typeof d?.catalog_url !== "string" || typeof d.qualified_name !== "string")
+    throw new Error(`${api}/v1/datasets/${qualified}: the response has no catalog_url or qualified_name`);
+  return d as Dataset;
 };
 
 /** Parquet files sit next to the catalog: .../ducklake.duckdb → .../ducklake.duckdb.files/ */
 export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")[0]}.files/`;
-
 
 /**
  * Attach one dataset. The catalog is fetched in a single GET: letting DuckDB read it by range
@@ -100,7 +105,9 @@ const attach = async (db: AsyncDuckDB, alias: string, d: Dataset): Promise<void>
   const url = d.versioned_catalog_url ?? d.catalog_url;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  const file = `${d.qualified_name.replace("/", "__")}.duckdb`;
+  // One file per alias: an alias is attached once per DuckDB, while one dataset can be attached
+  // under two aliases, and DuckDB refuses to attach one path twice.
+  const file = `${alias}.duckdb`;
   await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
   const conn = await db.connect();
   try {
@@ -124,7 +131,12 @@ export const plain = (v: unknown): unknown => {
 };
 
 /** One DuckDB per WASM URL, shared by every connection on the page. Aliases are global within it. */
-type Engine = { db: () => Promise<AsyncDuckDB>; attached: Map<string, { qualified: string; done: Promise<void> }> };
+type Engine = {
+  db: () => Promise<AsyncDuckDB>;
+  /** Terminate DuckDB if it was started. Never starts it. */
+  stop: () => Promise<void>;
+  attached: Map<string, { qualified: string; done: Promise<void> }>;
+};
 const engines = new Map<string, Engine>();
 
 const engine = (wasm: string): Engine => {
@@ -138,6 +150,13 @@ const engine = (wasm: string): Engine => {
         e.attached.clear();
         throw err;
       })),
+    stop: async () => {
+      const started = db;
+      db = null;
+      e.attached.clear();
+      // A failed start was already reported to the query that started it.
+      await started?.then((d) => d.terminate(), () => undefined);
+    },
     attached: new Map(),
   };
   engines.set(wasm, e);
@@ -148,8 +167,7 @@ const engine = (wasm: string): Engine => {
 export const closeAll = async (): Promise<void> => {
   const all = [...engines.values()];
   engines.clear();
-  // A failed start was already reported to the query that started it.
-  await Promise.all(all.map((e) => e.db().then((d) => d.terminate(), () => undefined)));
+  await Promise.all(all.map((e) => e.stop()));
 };
 
 /**
@@ -206,16 +224,20 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM }: ConnectOptio
     }
   };
 
-  const sources = (query: string): Promise<Dataset[]> => Promise.all(used(query).map((a) => row(declared.get(a) ?? "")));
+  const sources = (query?: string): Promise<Dataset[]> =>
+    Promise.all((query === undefined ? [...declared.keys()] : used(query)).map((a) => row(declared.get(a) ?? "")));
 
   return { sql, sources };
 };
 
 /** Read a list of datasets from an HTML attribute: "queria/e_stat queria/jma" or "a=alice/x b=bob/x". */
-export const parseDatasets = (attr: string): Declared =>
-  Object.fromEntries(
-    attr
-      .split(/[\s,]+/)
-      .filter(Boolean)
-      .map((w) => (w.includes("=") ? w.split("=", 2) : [w.split("/")[1] ?? "", w])),
-  );
+export const parseDatasets = (attr: string): Declared => {
+  const pairs = attr
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .map((w) => (w.includes("=") ? w.split("=", 2) : [w.split("/")[1] ?? "", w]));
+  // Object.fromEntries would keep only the last of two datasets with one alias.
+  if (new Set(pairs.map(([alias]) => alias)).size !== pairs.length)
+    throw new Error("Two datasets share an alias. Declare them as alias=name");
+  return Object.fromEntries(pairs);
+};

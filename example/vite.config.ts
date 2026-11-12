@@ -5,12 +5,15 @@ import { defineConfig, type Plugin } from "vite";
 const datasetsApi = (): Plugin => ({
   name: "datasets-api",
   configureServer: (server) => {
-    server.middlewares.use("/v1/datasets", async (req, res) => {
-      const upstream = await fetch(`https://queria.io/api/catalog/datasets${req.url}`);
-      const body = (await upstream.json()) as { dataset?: unknown };
-      res.statusCode = upstream.status;
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify(body.dataset ?? body));
+    server.middlewares.use("/v1/datasets", (req, res, next) => {
+      fetch(`https://queria.io/api/catalog/datasets${req.url}`)
+        .then(async (upstream) => {
+          const body = (await upstream.json()) as { dataset?: unknown };
+          res.statusCode = upstream.status;
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify(body.dataset ?? body));
+        })
+        .catch(next);
     });
   },
 });

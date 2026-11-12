@@ -7,7 +7,8 @@ import { poweredByHtml } from "../render/poweredBy.js";
 /**
  * <queria-chart datasets="queria/e_stat" sql="..." spec='{"mark": "line", ...}'>
  * Runs the SQL and draws the rows with the Vega-Lite spec, followed by the sources of the datasets.
- * Instead of sql, `rows` takes the rows as JSON, for pages that run the SQL at build time.
+ * Instead of sql, `rows` takes the rows as JSON, for pages that run the SQL at build time. Declare the datasets the
+ * rows came from in `datasets` so their sources are shown.
  * `api-url` replaces the Queria API, for example with a staging host.
  */
 export class QueriaChart extends HTMLElement {
@@ -51,8 +52,9 @@ export class QueriaChart extends HTMLElement {
     this.#clear();
     this.innerHTML = '<p class="queria-note">Loading…</p>';
     try {
-      const conn = sql ? connect({ datasets: parseDatasets(datasets ?? ""), apiUrl: this.getAttribute("api-url") ?? undefined }) : null;
-      const [data, sources] = conn && sql ? await Promise.all([conn.sql(sql), conn.sources(sql)]) : [JSON.parse(rows ?? "[]"), []];
+      const conn = connect({ datasets: parseDatasets(datasets ?? ""), apiUrl: this.getAttribute("api-url") ?? undefined });
+      // With rows, the page ran the SQL itself; show every declared dataset as a source.
+      const [data, sources] = await Promise.all([sql ? conn.sql(sql) : JSON.parse(rows ?? "[]"), conn.sources(sql ?? undefined)]);
       if (run !== this.#run) return;
       this.innerHTML = `<div></div>${attributionHtml(sources)}`;
       const finalize = await renderChart(this.firstElementChild as HTMLElement, JSON.parse(spec), data);

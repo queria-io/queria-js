@@ -10,7 +10,11 @@ export const renderChart = async (
   rows: readonly Record<string, unknown>[],
 ): Promise<() => void> => {
   const { default: embed } = await import("vega-embed");
-  const full = { width: "container", ...spec, data: { values: rows } } as VisualizationSpec;
+  // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
+  const composite = ["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec);
+  // Vega writes an id into every row it reads, so hand it copies: the caller's rows may be frozen or shared.
+  const values = rows.map((r) => ({ ...r }));
+  const full = { ...(composite ? {} : { width: "container" }), ...spec, data: { values } } as VisualizationSpec;
   const { finalize } = await embed(el, full, { actions: false });
   return finalize;
 };

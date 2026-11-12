@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, dataPath, lookup, parseDatasets } from "./client.js";
+import { aliases, connect, dataPath, lookup, parseDatasets } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -22,6 +22,8 @@ describe("parseDatasets", () => {
   it("reads names and alias=name pairs", () => {
     expect(parseDatasets(" queria/e_stat, a=alice/x ")).toEqual({ e_stat: "queria/e_stat", a: "alice/x" });
   });
+  it("rejects two datasets with one alias", () =>
+    expect(() => parseDatasets("alice/e_stat bob/e_stat")).toThrow("share an alias"));
 });
 
 describe("dataPath", () => {
@@ -38,8 +40,24 @@ describe("lookup", () => {
     expect((await lookup("https://api", "queria/e_stat")).catalog_url).toBe("u");
     expect(fetch).toHaveBeenCalledWith("https://api/v1/datasets/queria/e_stat");
   });
+  it("rejects a response without a catalog URL", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ dataset: { qualified_name: "x/y" } }));
+    await expect(lookup("https://api", "x/y")).rejects.toThrow("no catalog_url");
+  });
   it("reports a missing dataset", async () => {
     vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
     await expect(lookup("https://api", "x/y")).rejects.toThrow("x/y was not found");
+  });
+});
+
+describe("sources", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("returns every declared dataset without SQL, and only the referenced ones with SQL", async () => {
+    vi.stubGlobal("fetch", async (url: string) =>
+      Response.json({ qualified_name: url.split("/v1/datasets/")[1], catalog_url: "u" }),
+    );
+    const conn = connect({ datasets: ["queria/e_stat", "queria/jma"], apiUrl: "https://api" });
+    expect((await conn.sources()).map((d) => d.qualified_name)).toEqual(["queria/e_stat", "queria/jma"]);
+    expect((await conn.sources("SELECT * FROM jma.main.t")).map((d) => d.qualified_name)).toEqual(["queria/jma"]);
   });
 });

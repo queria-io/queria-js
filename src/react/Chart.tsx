@@ -13,11 +13,13 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
   const [state, setState] = useState<{ sources: Dataset[]; error?: unknown }>({ sources: [] });
   const sql = "sql" in data ? data.sql : null;
   const rows = "rows" in data ? data.rows : null;
+  // Compare the spec by content: a spec written inline is a new object on every render of the parent.
+  const specKey = JSON.stringify(spec);
 
   useEffect(() => {
     let alive = true;
     let finalize: (() => void) | undefined;
-    const load = sql === null ? Promise.all([rows ?? [], []]) : Promise.all([conn.sql(sql), conn.sources(sql)]);
+    const load = sql === null ? Promise.all([rows ?? [], conn.sources()]) : Promise.all([conn.sql(sql), conn.sources(sql)]);
     load
       .then(async ([values, sources]) => {
         if (!alive || !el.current) return;
@@ -25,12 +27,17 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
         finalize = await renderChart(el.current, spec, values);
         if (!alive) finalize();
       })
-      .catch((error: unknown) => alive && setState({ sources: [], error }));
+      .catch((error: unknown) => {
+        if (!alive) return;
+        // finalize stops the previous chart but leaves its drawing in the element.
+        el.current?.replaceChildren();
+        setState({ sources: [], error });
+      });
     return () => {
       alive = false;
       finalize?.();
     };
-  }, [conn, sql, rows, spec]);
+  }, [conn, sql, rows, specKey]);
 
   return (
     <div className={className}>
