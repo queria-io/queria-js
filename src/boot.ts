@@ -1,5 +1,6 @@
 import type { AsyncDuckDB, DuckDBBundles } from "@duckdb/duckdb-wasm";
 import { stripLiterals } from "./sql.js";
+import { assertWasmAllowed, fetchFrom, loadFailureHint } from "./fetch.js";
 
 /**
  * Source put before the DuckDB worker script. It adds a Bearer token to the worker's XHRs, and only to
@@ -52,7 +53,7 @@ const instantiate = async (bundles: DuckDBBundles): Promise<AsyncDuckDB> => {
   if (!bundle.mainWorker) throw new Error("The DuckDB bundle has no worker script");
   // The worker lives on another origin, and a page with a strict-dynamic CSP blocks importScripts,
   // so fetch the script and start it from a blob URL.
-  const res = await fetch(bundle.mainWorker);
+  const res = await fetchFrom(bundle.mainWorker);
   if (!res.ok) throw new Error(`${bundle.mainWorker}: ${res.status}`);
   const url = URL.createObjectURL(new Blob([authPatch, await res.text()], { type: "text/javascript" }));
   try {
@@ -77,10 +78,12 @@ const instantiate = async (bundles: DuckDBBundles): Promise<AsyncDuckDB> => {
 
 /** Start DuckDB from the given WASM URL, and from jsDelivr when that fails. */
 export const boot = async (wasm: string): Promise<AsyncDuckDB> => {
+  assertWasmAllowed();
   const db = await instantiate(bundlesAt(wasm)).catch(async (e: unknown) => {
     const { getJsDelivrBundles } = await import("@duckdb/duckdb-wasm");
     return instantiate(getJsDelivrBundles()).catch((e2: unknown) => {
-      throw new AggregateError([e, e2], "DuckDB WASM could not be started");
+      // The first error is about Queria's copy, which is what a page allows in its Content Security Policy.
+      throw new AggregateError([e, e2], `DuckDB WASM could not be started: ${e instanceof Error ? e.message : String(e)}`);
     });
   });
   try {
@@ -91,7 +94,8 @@ export const boot = async (wasm: string): Promise<AsyncDuckDB> => {
     await conn.query("INSTALL ducklake; LOAD ducklake").finally(() => conn.close());
   } catch (e) {
     await db.terminate().catch(() => undefined);
-    throw e;
+    const hint = loadFailureHint(String(e));
+    throw hint ? new Error(hint, { cause: e }) : e;
   }
   return db;
 };

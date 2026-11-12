@@ -1,6 +1,7 @@
 import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import type { Rows } from "./chart.js";
 import { BASE, CATEGORIES } from "./palette.js";
+import { fetchFrom } from "../fetch.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
 
@@ -155,7 +156,7 @@ const bboxIndexes = new Map<string, Promise<Record<string, Bbox>>>();
 const bboxIndex = (url: string): Promise<Record<string, Bbox>> => {
   const found = bboxIndexes.get(url);
   if (found) return found;
-  const p = fetch(url)
+  const p = fetchFrom(url)
     .then((res) => {
       if (!res.ok) throw new Error(`${url}: ${res.status}`);
       return res.json() as Promise<Record<string, Bbox>>;

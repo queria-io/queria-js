@@ -78,6 +78,18 @@ Shows up to 100 rows (`limit` changes it). In JavaScript, `renderTable(el, rows)
 
 With a bundler, charts need `vega`, `vega-lite`, `vega-embed` and `vega-interpreter`; maps need `maplibre-gl`. Install them only when you use them.
 
+## Content Security Policy
+
+Pages with a Content Security Policy, such as apps inside AI chats, must allow these sources. When one is missing, the error names it.
+
+- `script-src`: `https://cdn.jsdelivr.net` (when loaded from jsDelivr) and `'wasm-unsafe-eval'`
+- `worker-src`: `blob:`
+- `connect-src`: `https://api.queria.io`, `https://data.queria.io` (the declared datasets), `https://assets.queria.io` (DuckDB WASM and maps), `https://extensions.duckdb.org`, `https://cdn.jsdelivr.net`
+- `style-src`: `https://cdn.jsdelivr.net` (maplibre-gl's CSS, for maps)
+- `img-src`: `data:` and `blob:` (for maps)
+
+Where the page cannot reach these hosts at all, get the rows elsewhere (for example from Queria's MCP server) and draw them without SQL: `renderChart(el, spec, rows)`, `renderTable(el, rows)`, or `<queria-chart rows='[...]'>`. Declare the datasets the rows came from in `datasets` so their sources are shown.
+
 ## License
 
 MIT
