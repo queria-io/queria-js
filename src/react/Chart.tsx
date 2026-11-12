@@ -24,7 +24,7 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
       .then(async ([values, sources]) => {
         if (!alive || !el.current) return;
         setState({ sources });
-        finalize = await renderChart(el.current, spec, values);
+        ({ finalize } = await renderChart(el.current, spec, values));
         if (!alive) finalize();
       })
       .catch((error: unknown) => {

@@ -57,7 +57,7 @@ export class QueriaChart extends HTMLElement {
       const [data, sources] = await Promise.all([sql ? conn.sql(sql) : JSON.parse(rows ?? "[]"), conn.sources(sql ?? undefined)]);
       if (run !== this.#run) return;
       this.innerHTML = `<div></div>${attributionHtml(sources)}`;
-      const finalize = await renderChart(this.firstElementChild as HTMLElement, JSON.parse(spec), data);
+      const { finalize } = await renderChart(this.firstElementChild as HTMLElement, JSON.parse(spec), data);
       if (run === this.#run) this.#finalize = finalize;
       else finalize();
     } catch (e) {
