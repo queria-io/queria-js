@@ -10,6 +10,11 @@ const copy = (rows: Rows): Record<string, unknown>[] => rows.map((r) => ({ ...r 
 
 const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
 
+const ownDatasets = (spec: ChartSpec): object => {
+  const d: unknown = "datasets" in spec ? spec.datasets : undefined;
+  return typeof d === "object" && d !== null ? d : {};
+};
+
 /**
  * Put the data into the spec. With rows, they become the data of a spec that has none.
  * With named rows, the spec (or its layers) picks them with data: { name }; rows named "" are the default data.
@@ -23,7 +28,10 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
     ...(composite ? {} : { width: "container" }),
     ...spec,
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
-    ...(Object.keys(rest).length ? { datasets: Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, copy(v)])) } : {}),
+    // The spec's own datasets stay; named rows are laid over them.
+    ...(Object.keys(rest).length
+      ? { datasets: { ...ownDatasets(spec), ...Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, copy(v)])) } }
+      : {}),
   };
 };
 

@@ -9,6 +9,11 @@ describe("withData", () => {
     const spec = { layer: [{ mark: "line", data: { name: "a" } }, { mark: "point", data: { name: "b" } }] };
     expect(withData(spec, { a: [{ x: 1 }], b: [{ x: 2 }] })).toMatchObject({ datasets: { a: [{ x: 1 }], b: [{ x: 2 }] } });
   });
+  it("keeps the spec's own datasets", () => {
+    expect(withData({ datasets: { c: [{ x: 3 }] }, mark: "line" }, { a: [{ x: 1 }] })).toMatchObject({
+      datasets: { c: [{ x: 3 }], a: [{ x: 1 }] },
+    });
+  });
   it("copies rows and leaves width alone for composite views", () => {
     const rows = [Object.freeze({ x: 1 })];
     const out = withData({ hconcat: [] }, rows);
