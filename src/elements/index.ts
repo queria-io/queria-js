@@ -5,6 +5,10 @@ import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
+/** A line of text in place of the chart or map. Errors keep their line breaks. */
+const note = (text: string): string =>
+  `<p class="queria-note" style="margin:0;white-space:pre-wrap;font:13px/1.5 system-ui,sans-serif;color:#737373">${esc(text)}</p>`;
+
 type Draw = (box: HTMLElement, rows: Record<string, unknown>[], attr: (name: string) => string | null) => Promise<{ finalize: () => void }>;
 
 /**
@@ -52,18 +56,22 @@ const dataElement = (need: string, extra: readonly string[], box: string, draw: 
       if (!attr(need) || (!rows && !sql)) return;
       const run = ++this.#run;
       this.#clear();
-      this.innerHTML = '<p class="queria-note">Loading…</p>';
+      this.innerHTML = note("Loading…");
       try {
         const conn = connect({ datasets: parseDatasets(attr("datasets") ?? ""), apiUrl: attr("api-url") ?? undefined });
         // With rows, the page ran the SQL itself; show every declared dataset as a source.
         const [data, sources] = await Promise.all([sql ? conn.sql(sql) : JSON.parse(rows ?? "[]"), conn.sources(sql ?? undefined)]);
         if (run !== this.#run) return;
+        if (data.length === 0) {
+          this.innerHTML = note("The SQL returned no rows.");
+          return;
+        }
         this.innerHTML = `${box}${attributionHtml(sources)}`;
         const { finalize } = await draw(this.firstElementChild as HTMLElement, data, attr);
         if (run === this.#run) this.#finalize = finalize;
         else finalize();
       } catch (e) {
-        if (run === this.#run) this.innerHTML = `<p class="queria-note">${esc(String(e))}</p>`;
+        if (run === this.#run) this.innerHTML = note(e instanceof Error ? e.message : String(e));
       }
     }
   };

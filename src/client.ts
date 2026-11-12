@@ -113,6 +113,17 @@ export const plain = (v: unknown): unknown => {
   return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
 };
 
+/**
+ * What to try after an SQL error: declare a dataset the SQL seems to read, or look up the table names
+ * on the pages of the datasets it reads.
+ */
+export const hints = (message: string, used: readonly Dataset[], undeclared: readonly string[]): string[] => [
+  ...(undeclared.length ? [`If ${undeclared.join(", ")} is a dataset, declare it in connect({ datasets })`] : []),
+  ...(/Catalog Error: (Table|Schema) with name/i.test(message)
+    ? used.flatMap((d) => (d.page_url ? [`Tables of ${d.qualified_name}: ${d.page_url}`] : []))
+    : []),
+];
+
 /** One DuckDB per WASM URL, shared by every connection on the page. Aliases are global within it. */
 type Engine = {
   db: () => Promise<AsyncDuckDB>;
@@ -222,9 +233,9 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
     try {
       return await withSpatial(db, query, run);
     } catch (e) {
-      const undeclared = datasetsIn(query).filter((a) => !declared.has(a));
-      if (undeclared.length === 0) throw e;
-      throw new Error(`${String(e)}\nIf ${undeclared.join(", ")} is a dataset, declare it in connect({ datasets })`, { cause: e });
+      const message = e instanceof Error ? e.message : String(e);
+      const next = hints(message, ds, datasetsIn(query).filter((a) => !declared.has(a)));
+      throw next.length === 0 ? e : new Error([message, ...next].join("\n"), { cause: e });
     }
   };
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, connect, dataPath, lookup, parseDatasets } from "./client.js";
+import { aliases, connect, dataPath, hints, lookup, parseDatasets } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -74,4 +74,17 @@ describe("sources", () => {
     expect((await conn.sources()).map((d) => d.qualified_name)).toEqual(["queria/e_stat", "queria/jma"]);
     expect((await conn.sources("SELECT * FROM jma.main.t")).map((d) => d.qualified_name)).toEqual(["queria/jma"]);
   });
+});
+
+describe("hints", () => {
+  const e_stat = { qualified_name: "queria/e_stat", page_url: "https://queria.io/datasets/queria/e_stat", catalog_url: "u" };
+  it("points to the dataset pages when a table is missing", () => {
+    expect(hints("Catalog Error: Table with name x does not exist!", [e_stat], [])).toEqual([
+      "Tables of queria/e_stat: https://queria.io/datasets/queria/e_stat",
+    ]);
+  });
+  it("asks to declare names that look like datasets", () => {
+    expect(hints("Binder Error: x", [], ["jma"])).toEqual(["If jma is a dataset, declare it in connect({ datasets })"]);
+  });
+  it("adds nothing to other errors", () => expect(hints("Parser Error: syntax error", [e_stat], [])).toEqual([]));
 });

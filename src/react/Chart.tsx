@@ -41,7 +41,7 @@ export const Chart = ({ spec, className = "queria-chart", ...data }: Props) => {
 
   return (
     <div className={className}>
-      {state.error ? <p className="queria-note">{String(state.error)}</p> : null}
+      {state.error ? <p className="queria-note">{state.error instanceof Error ? state.error.message : String(state.error)}</p> : null}
       <div ref={el} />
       <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources) }} />
     </div>
