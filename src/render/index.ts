@@ -7,6 +7,7 @@ export {
   areaCode,
   MAP_STYLES,
   renderMap,
+  ROWS_LAYER,
   type AreaLevel,
   type MapLayer,
   type MapRenderOptions,

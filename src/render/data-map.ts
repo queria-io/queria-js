@@ -6,10 +6,11 @@ import { fetchFrom } from "../fetch.js";
 export type AreaLevel = "prefecture" | "city" | "small_area";
 
 /**
- * How rows are put on the map: by area code (the shapes come from Queria's boundary tiles) or by longitude and latitude.
+ * How rows are put on the map: by area code (the shapes come from Queria's boundary tiles), by longitude and latitude,
+ * or by a column of GeoJSON geometries (as text or objects, such as the output of ST_AsGeoJSON).
  * The values are column names. `color` colors by a column, `label` names a row on hover or tap.
  */
-export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: string }) & {
+export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: string } | { geometry: string }) & {
   color?: string;
   label?: string;
   opacity?: number;
@@ -131,6 +132,39 @@ export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: 
   };
 };
 
+type Geometry = Exclude<GeoJSON.Geometry, GeoJSON.GeometryCollection>;
+
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
+/** The simple geometries in a value: a GeoJSON geometry as text or an object. Geometry collections are split. */
+export const geometriesOf = (value: unknown): Geometry[] => {
+  const g = typeof value === "string" ? parseJson(value) : value;
+  if (g === null || typeof g !== "object" || !("type" in g)) return [];
+  if (g.type === "GeometryCollection" && "geometries" in g && Array.isArray(g.geometries)) return g.geometries.flatMap(geometriesOf);
+  return "coordinates" in g && Array.isArray(g.coordinates) ? [g as Geometry] : [];
+};
+
+/** Geometries as GeoJSON. Rows without a geometry are left out. A feature's `row` is the index of its row. */
+export const geometryFeatures = (rows: Rows, layer: MapLayer & { geometry: string }): GeoJSONSourceSpecification["data"] => {
+  const { colors } = colorScale(rows, layer.color);
+  return {
+    type: "FeatureCollection",
+    features: rows.flatMap((r, i) =>
+      geometriesOf(r[layer.geometry]).map((geometry) => ({ type: "Feature" as const, geometry, properties: { color: colors[i], hover: hoverLines(r, layer).join("\n"), row: i } })),
+    ),
+  };
+};
+
+/** Every [lng, lat] in nested coordinates. */
+const positions = (c: unknown): [number, number][] =>
+  Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? [[c[0], c[1]]] : Array.isArray(c) ? c.flatMap(positions) : [];
+
 /** Color and hover lines by area code. The first row of a code wins. */
 export const areaRows = (rows: Rows, layer: MapLayer & { area: AreaLevel; code: string }): Map<string, { color: string; hover: string }> => {
   const { colors } = colorScale(rows, layer.color);
@@ -168,29 +202,42 @@ const bboxIndex = (url: string): Promise<Record<string, Bbox>> => {
   return p;
 };
 
-/** The bounds of the points, or of the areas from the style's bbox index (small areas use their city). */
-const boundsOf = async (map: MapLibreMap, layer: MapLayer, rows: Rows, codes: string[]): Promise<Bbox | null> => {
-  if ("lng" in layer) {
-    return union(rows.flatMap((r): Bbox[] => {
-      const p = positionOf(r, layer);
-      return p ? [[p[0], p[1], p[0], p[1]]] : [];
-    }));
-  }
+/** The bbox index of the style's boundary tiles, or null when the style has none or it fails to load. */
+const styleBboxIndex = async (map: MapLibreMap): Promise<Record<string, Bbox> | null> => {
   const url = (map.getStyle().metadata as Record<string, unknown> | undefined)?.["queria:bbox"];
-  if (typeof url !== "string") return null;
-  const index = await bboxIndex(url);
+  return typeof url === "string" ? bboxIndex(url).catch(() => null) : null;
+};
+
+const pointBox = ([lng, lat]: [number, number]): Bbox => [lng, lat, lng, lat];
+
+/** The bounds of the points or geometries, or of the areas from the bbox index (small areas use their city). */
+export const boundsOf = (layer: MapLayer, rows: Rows, codes: string[], index: Record<string, Bbox> | null): Bbox | null => {
+  if ("lng" in layer) return union(rows.flatMap((r) => [positionOf(r, layer)].filter((p) => p !== null).map(pointBox)));
+  if ("geometry" in layer) return union(rows.flatMap((r) => geometriesOf(r[layer.geometry]).flatMap((g) => positions(g.coordinates))).map(pointBox));
+  if (index === null) return null;
   return union(codes.flatMap((c): Bbox[] => {
-      const box = index[layer.area === "small_area" ? c.slice(0, 5) : c];
-      return box ? [box] : [];
-    }));
+    const box = index[layer.area === "small_area" ? c.slice(0, 5) : c];
+    return box ? [box] : [];
+  }));
 };
 
 /** maplibre-gl's stylesheet for a version, from the CDN that serves the package. */
 export const maplibreCss = (version: string): string => `https://cdn.jsdelivr.net/npm/maplibre-gl@${version}/dist/maplibre-gl.css`;
 
-/** Link maplibre-gl's stylesheet once, unless the page links one already. Without it the map's controls and popups break. */
+/** Whether a stylesheet of the page already styles the map, such as maplibre-gl's CSS bundled into the app. */
+const pageHasMapCss = (): boolean =>
+  [...document.styleSheets].some((sheet) => {
+    try {
+      return [...sheet.cssRules].some((r) => r instanceof CSSStyleRule && r.selectorText.includes(".maplibregl-map"));
+    } catch {
+      // Rules of a stylesheet from another origin cannot be read.
+      return false;
+    }
+  });
+
+/** Link maplibre-gl's stylesheet once, unless the page has it already. Without it the map's controls and popups break. */
 const linkCss = (version: string): void => {
-  if (document.querySelector('link[href*="maplibre-gl"]')) return;
+  if (document.querySelector('link[href*="maplibre-gl"]') || pageHasMapCss()) return;
   document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: maplibreCss(version) }));
 };
 
@@ -204,6 +251,13 @@ export const loadMaplibre = async (): Promise<Maplibre> => {
   const m: Maplibre & { default?: Maplibre } = await import("maplibre-gl");
   return typeof m.Map === "function" ? m : (m.default ?? m);
 };
+
+/**
+ * The id of the layer that draws the rows. Listen to it for clicks: `map.on("click", ROWS_LAYER, ...)`.
+ * Geometries add `${ROWS_LAYER}-line` and `${ROWS_LAYER}-point`. A feature's `code` property is its area code;
+ * for geometries, its `row` property is the index of its row.
+ */
+export const ROWS_LAYER = "queria-rows";
 
 export type MapRenderOptions = {
   /** A MapLibre style or its URL. By default Queria's style, which has the boundary tiles. */
@@ -240,12 +294,32 @@ export const renderMap = async (
     const opacity = layer.opacity ?? ("lng" in layer ? 0.9 : 0.6);
     let codes: string[] = [];
     let hover: (f: { properties: Record<string, unknown> }) => string | undefined;
-    if ("lng" in layer) {
-      map.addSource("queria-rows", { type: "geojson", data: pointFeatures(rows, layer) });
+    const hoverLayers = [ROWS_LAYER];
+    if ("geometry" in layer) {
+      map.addSource(ROWS_LAYER, { type: "geojson", data: geometryFeatures(rows, layer) });
       map.addLayer({
-        id: "queria-rows",
+        id: ROWS_LAYER,
+        type: "fill",
+        source: ROWS_LAYER,
+        filter: ["==", "$type", "Polygon"],
+        paint: { "fill-color": ["get", "color"], "fill-opacity": opacity, "fill-outline-color": "#ffffff" },
+      }, below);
+      map.addLayer({ id: `${ROWS_LAYER}-line`, type: "line", source: ROWS_LAYER, filter: ["==", "$type", "LineString"], paint: { "line-color": ["get", "color"], "line-width": 2, "line-opacity": opacity } });
+      map.addLayer({
+        id: `${ROWS_LAYER}-point`,
         type: "circle",
-        source: "queria-rows",
+        source: ROWS_LAYER,
+        filter: ["==", "$type", "Point"],
+        paint: { "circle-radius": 4, "circle-color": ["get", "color"], "circle-opacity": opacity, "circle-stroke-width": 1, "circle-stroke-color": "#ffffff" },
+      });
+      hoverLayers.push(`${ROWS_LAYER}-line`, `${ROWS_LAYER}-point`);
+      hover = (f) => f.properties.hover as string | undefined;
+    } else if ("lng" in layer) {
+      map.addSource(ROWS_LAYER, { type: "geojson", data: pointFeatures(rows, layer) });
+      map.addLayer({
+        id: ROWS_LAYER,
+        type: "circle",
+        source: ROWS_LAYER,
         paint: { "circle-radius": 4, "circle-color": ["get", "color"], "circle-opacity": opacity, "circle-stroke-width": 1, "circle-stroke-color": "#ffffff" },
       });
       hover = (f) => f.properties.hover as string | undefined;
@@ -256,7 +330,7 @@ export const renderMap = async (
       codes = [...areas.keys()];
       if (codes.length > 0)
         map.addLayer({
-          id: "queria-rows",
+          id: ROWS_LAYER,
           type: "fill",
           source,
           "source-layer": layer.area,
@@ -284,10 +358,12 @@ export const renderMap = async (
       body.textContent = text;
       popup.setLngLat(e.lngLat).setDOMContent(body).addTo(map);
     };
-    map.on("mousemove", "queria-rows", show);
-    map.on("click", "queria-rows", show);
-    map.on("mouseleave", "queria-rows", () => popup.remove());
-    const bounds = await boundsOf(map, layer, rows, codes).catch(() => null);
+    hoverLayers.forEach((id) => {
+      map.on("mousemove", id, show);
+      map.on("click", id, show);
+      map.on("mouseleave", id, () => popup.remove());
+    });
+    const bounds = boundsOf(layer, rows, codes, "area" in layer ? await styleBboxIndex(map) : null);
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
   } catch (e) {
     map.remove();
