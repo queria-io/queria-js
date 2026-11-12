@@ -24,6 +24,8 @@ Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded 
 
 Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. In JavaScript, `renderChart(el, spec, rows, { highlight })`.
 
+Under each chart, map and table that ran SQL, a folded "SQL" section shows the query and links to queria.io, where readers can open it in a new report and change it. In JavaScript, `q.reportUrl(sql)` returns the link.
+
 In a module script, import the functions from `https://cdn.jsdelivr.net/npm/queria@0.1/+esm`.
 
 ## HTML with a bundler

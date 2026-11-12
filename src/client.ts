@@ -41,6 +41,8 @@ export type Connection = {
    * Without SQL (rows computed elsewhere), every declared dataset.
    */
   sources: (sql?: string) => Promise<Dataset[]>;
+  /** A queria.io link that opens the SQL in a new report, with the datasets it reads, so readers can rerun and change it. */
+  reportUrl: (sql: string) => string;
 };
 
 const API = "https://api.queria.io";
@@ -244,8 +246,14 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
   const sources = (query?: string): Promise<Dataset[]> =>
     Promise.all((query === undefined ? [...declared.keys()] : used(query)).map((a) => row(declared.get(a) ?? "")));
 
-  return { sql, sources };
+  const reportUrl = (query: string): string => reportLink(query, used(query).map((a) => [a, declared.get(a) ?? ""]));
+
+  return { sql, sources, reportUrl };
 };
+
+/** The queria.io page that starts a report from SQL. Each dataset is declared as "handle/name as alias". */
+export const reportLink = (sql: string, datasets: readonly (readonly [string, string])[], site = "https://queria.io"): string =>
+  `${site}/reports/new?${new URLSearchParams([["sql", sql], ...datasets.map(([alias, q]): [string, string] => ["dataset", `${q} as ${alias}`])])}`;
 
 /** Read a list of datasets from an HTML attribute: "queria/e_stat queria/jma" or "a=alice/x b=bob/x". */
 export const parseDatasets = (attr: string): Declared => {

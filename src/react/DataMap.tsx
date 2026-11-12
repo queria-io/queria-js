@@ -46,7 +46,7 @@ export const DataMap = ({ layer, className = "queria-map", style, theme, ...data
     <div className={className}>
       {state.error ? <p className="queria-note">{state.error instanceof Error ? state.error.message : String(state.error)}</p> : null}
       <div ref={el} style={{ height: "var(--queria-map-height, 400px)" }} />
-      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources) }} />
+      <div dangerouslySetInnerHTML={{ __html: attributionHtml(state.sources, sql === null ? undefined : { sql, url: conn.reportUrl(sql) }) }} />
     </div>
   );
 };

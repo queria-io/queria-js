@@ -74,7 +74,7 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
           this.innerHTML = note("The SQL returned no rows.");
           return;
         }
-        this.innerHTML = `${box}${attributionHtml(sources)}`;
+        this.innerHTML = `${box}${attributionHtml(sources, sql ? { sql, url: conn.reportUrl(sql) } : undefined)}`;
         const { finalize } = await draw(this.firstElementChild as HTMLElement, data, attr);
         if (run === this.#run) this.#finalize = finalize;
         else finalize();

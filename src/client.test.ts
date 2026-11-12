@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, connect, dataPath, hints, lookup, parseDatasets } from "./client.js";
+import { aliases, connect, dataPath, hints, lookup, parseDatasets, reportLink } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -92,4 +92,13 @@ describe("hints", () => {
     ]);
   });
   it("adds nothing to other errors", () => expect(hints("Parser Error: syntax error", [e_stat], [])).toEqual([]));
+});
+
+describe("reportLink", () => {
+  it("passes the SQL and the declared datasets to a new report", () => {
+    const url = new URL(reportLink("SELECT 1 FROM e_stat.a.b", [["e_stat", "queria/e_stat"]]));
+    expect(url.origin + url.pathname).toBe("https://queria.io/reports/new");
+    expect(url.searchParams.get("sql")).toBe("SELECT 1 FROM e_stat.a.b");
+    expect(url.searchParams.getAll("dataset")).toEqual(["queria/e_stat as e_stat"]);
+  });
 });
