@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaCode, areaRows, colorScale, pointFeatures } from "./data-map.js";
+import { areaCode, areaRows, boundsOf, colorScale, geometriesOf, geometryFeatures, pointFeatures } from "./data-map.js";
 
 describe("areaCode", () => {
   it("restores leading zeros and drops the check digit", () => {
@@ -42,5 +42,33 @@ describe("areaRows", () => {
     const areas = areaRows([{ c: 13101, p: 1 }, { c: "131016", p: 2 }], { area: "city", code: "c", color: "p" });
     expect([...areas.keys()]).toEqual(["13101"]);
     expect(areas.get("13101")?.hover).toBe("p: 1");
+  });
+});
+
+describe("geometriesOf", () => {
+  it("reads text and objects, and splits collections", () => {
+    const point = { type: "Point", coordinates: [139.7, 35.6] };
+    expect(geometriesOf(JSON.stringify(point))).toEqual([point]);
+    expect(geometriesOf({ type: "GeometryCollection", geometries: [point, point] })).toEqual([point, point]);
+    expect(geometriesOf("not json")).toEqual([]);
+    expect(geometriesOf(null)).toEqual([]);
+  });
+});
+
+describe("geometryFeatures", () => {
+  it("makes a feature per geometry with the row's color and hover", () => {
+    const line = { type: "LineString", coordinates: [[139, 35], [140, 36]] };
+    const data = geometryFeatures([{ g: JSON.stringify(line), n: "a" }, { g: null }], { geometry: "g", label: "n" });
+    expect(data).toMatchObject({ features: [{ geometry: line, properties: { hover: "a", row: 0 } }] });
+  });
+});
+
+describe("boundsOf", () => {
+  it("spans the geometries", () => {
+    const g = { type: "Polygon", coordinates: [[[139, 35], [141, 35], [140, 37], [139, 35]]] };
+    expect(boundsOf({ geometry: "g" }, [{ g }], [], null)).toEqual([139, 35, 141, 37]);
+  });
+  it("spans the areas from the index", () => {
+    expect(boundsOf({ area: "small_area", code: "c" }, [], ["14101000101", "14152000101"], { "14101": [139, 35, 140, 36], "14152": [139.5, 35.2, 140.5, 35.4] })).toEqual([139, 35, 140.5, 36]);
   });
 });
