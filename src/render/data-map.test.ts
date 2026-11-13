@@ -119,6 +119,10 @@ describe("hover", () => {
     const data = pointFeatures([{ x: 139, y: 35, n: "a", p: 1234.5, memo: "m", empty: "" }], { lng: "x", lat: "y", label: "n", color: "p", name: "店", popup: ["memo", "empty"] }, { locale: "de" });
     expect(data.features[0].properties?.hover).toBe("店\na\np: 1.234,5\nmemo: m");
   });
+  it("leaves out the colored value when the cell is empty", () => {
+    const data = pointFeatures([{ x: 139, y: 35, n: "a", p: null }, { x: 139, y: 35, n: "b" }], { lng: "x", lat: "y", label: "n", color: "p" });
+    expect(data.features.map((f) => f.properties?.hover)).toEqual(["a", "b"]);
+  });
 });
 
 describe("lines", () => {

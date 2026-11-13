@@ -178,7 +178,14 @@ const formatNumber = (n: number, locale: string | undefined, digits?: number): s
 export type LayerKind = "fill" | "line" | "point";
 
 /** What a layer added to a map shows in the legend. `color` is the layer's color when it has no color column. */
-export type LegendEntry = { name?: string; kind: LayerKind; color: string; legend: Legend | null };
+export type LegendEntry = {
+  name?: string;
+  kind: LayerKind;
+  color: string;
+  legend: Legend | null;
+  /** The layer asked for no legend (`legend: false`). legendElement leaves it out. */
+  hidden?: boolean;
+};
 
 const swatch = (kind: LayerKind, color: string): HTMLDivElement =>
   div(`flex:none;width:10px;height:${kind === "line" ? 3 : 10}px;border-radius:${kind === "point" ? "50%" : "2px"};background:${color}`);
@@ -201,7 +208,7 @@ export const legendElement = (
   { locale, corner = "top-left" }: LegendOptions = {},
 ): HTMLElement | null => {
   const list = Array.isArray(entries) ? entries : [entries];
-  const shown = list.filter((e) => e.legend !== null || (list.length > 1 && e.name));
+  const shown = list.filter((e) => !e.hidden && (e.legend !== null || (list.length > 1 && e.name)));
   if (shown.length === 0) return null;
   const box = div(
     `position:absolute;${corner === "top-left" ? "top" : "bottom"}:8px;left:8px;z-index:2;max-width:45%;padding:6px 8px;border-radius:4px;font:12px/1.4 sans-serif;display:flex;flex-direction:column;gap:4px;${theme === "dark" ? "background:rgba(23,23,23,.85);color:#e5e5e5" : "background:rgba(255,255,255,.9);color:#262626"}`,
@@ -240,13 +247,17 @@ const cellText = (v: unknown, locale: string | undefined): string => {
   return n === null ? textOf(v) : formatNumber(n, locale);
 };
 
+/** "column: value", or null when the cell is empty, so that hover shows no line without a value. */
+const cellLine = (row: Record<string, unknown>, column: string, locale: string | undefined): string | null =>
+  row[column] === null || row[column] === undefined || row[column] === "" ? null : `${column}: ${cellText(row[column], locale)}`;
+
 /** Lines shown on hover: the layer's name, the label, the colored value, then the popup columns. */
 const hoverLines = (row: Record<string, unknown>, layer: MapLayer, locale: string | undefined): string[] =>
   [
     layer.name ?? null,
     layer.label === undefined ? null : textOf(row[layer.label]),
-    layer.color === undefined || layer.color === layer.label ? null : `${layer.color}: ${cellText(row[layer.color], locale)}`,
-    ...(layer.popup ?? []).map((c) => (row[c] === null || row[c] === undefined || row[c] === "" ? null : `${c}: ${cellText(row[c], locale)}`)),
+    layer.color === undefined || layer.color === layer.label ? null : cellLine(row, layer.color, locale),
+    ...(layer.popup ?? []).map((c) => cellLine(row, c, locale)),
   ].filter((l): l is string => !!l);
 
 /** The row's [lng, lat], or null when either is missing, not a number, or out of range. */
@@ -286,6 +297,22 @@ export const geometryParts = (value: unknown): { geometry: Geometry; head: boole
 /** The simple geometries in a value. */
 export const geometriesOf = (value: unknown): Geometry[] => geometryParts(value).map((p) => p.geometry);
 
+const parsedParts = new WeakMap<Record<string, unknown>, Map<string, ReturnType<typeof geometryParts>>>();
+
+/**
+ * The geometry parts of a row's column, parsed once per row: placing, coloring, drawing and fitting a layer all
+ * read them, and the GeoJSON text of large shapes is slow to parse.
+ */
+const rowParts = (row: Record<string, unknown>, column: string): ReturnType<typeof geometryParts> => {
+  let byColumn = parsedParts.get(row);
+  if (!byColumn) parsedParts.set(row, (byColumn = new Map()));
+  let parts = byColumn.get(column);
+  if (!parts) byColumn.set(column, (parts = geometryParts(row[column])));
+  return parts;
+};
+
+const rowGeometries = (row: Record<string, unknown>, column: string): Geometry[] => rowParts(row, column).map((p) => p.geometry);
+
 /** Every [lng, lat] in nested coordinates. */
 const positions = (c: unknown): [number, number][] =>
   Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? [[c[0], c[1]]] : Array.isArray(c) ? c.flatMap(positions) : [];
@@ -302,7 +329,7 @@ const knownCode = (area: AreaLevel, code: string, index: Record<string, Bbox> | 
 /** Whether a row can be put on the map: it has a position, a geometry, or an area code the boundary tiles have. */
 const isPlaced = (layer: MapLayer, row: Record<string, unknown>, index: Record<string, Bbox> | null): boolean => {
   if ("lng" in layer) return positionOf(row, layer) !== null;
-  if ("geometry" in layer) return geometriesOf(row[layer.geometry]).length > 0;
+  if ("geometry" in layer) return rowParts(row, layer.geometry).length > 0;
   const code = areaCode(layer.area, row[layer.code]);
   return code !== null && knownCode(layer.area, code, index);
 };
@@ -311,7 +338,7 @@ const isPlaced = (layer: MapLayer, row: Record<string, unknown>, index: Record<s
 export const layerKind = (layer: MapLayer, rows: Rows): LayerKind => {
   if ("lng" in layer) return "point";
   if ("area" in layer) return "fill";
-  const all = rows.flatMap((r) => geometriesOf(r[layer.geometry]));
+  const all = rows.flatMap((r) => rowGeometries(r, layer.geometry));
   return all.some(isLine) ? "line" : all.length > 0 && all.every(isPoint) ? "point" : "fill";
 };
 
@@ -350,7 +377,7 @@ export const geometryFeatures = (rows: Rows, layer: MapLayer & { geometry: strin
   return {
     type: "FeatureCollection",
     features: rows.flatMap((r, i) =>
-      geometryParts(r[layer.geometry]).map(({ geometry, head }) => ({
+      rowParts(r, layer.geometry).map(({ geometry, head }) => ({
         type: "Feature" as const,
         geometry,
         properties: {
@@ -433,7 +460,7 @@ const pointBox = ([lng, lat]: [number, number]): Bbox => [lng, lat, lng, lat];
 /** The bounds of the points or geometries, or of the areas from the bbox index (small areas use their city). */
 export const boundsOf = (layer: MapLayer, rows: Rows, codes: string[], index: Record<string, Bbox> | null): Bbox | null => {
   if ("lng" in layer) return union(rows.flatMap((r) => [positionOf(r, layer)].filter((p) => p !== null).map(pointBox)));
-  if ("geometry" in layer) return union(rows.flatMap((r) => geometriesOf(r[layer.geometry]).flatMap((g) => positions(g.coordinates))).map(pointBox));
+  if ("geometry" in layer) return union(rows.flatMap((r) => rowGeometries(r, layer.geometry).flatMap((g) => positions(g.coordinates))).map(pointBox));
   if (index === null) return null;
   return union(codes.flatMap((c): Bbox[] => {
     const box = index[bboxKey(layer.area, c)];
@@ -534,7 +561,7 @@ export const addMapLayers = async (
     const context = { index: entry.index ?? i, locale };
     const kind = layerKind(layer, rows);
     const { fixed, legend } = layerColors(layer, rows, { ...context, bbox: index });
-    const base = { id, name: layer.name, kind, color: fixed, legend: layer.legend === false ? null : legend };
+    const base = { id, name: layer.name, kind, color: fixed, legend: layer.legend === false ? null : legend, ...(layer.legend === false && { hidden: true }) };
     const opacity = layer.opacity ?? (kind === "fill" ? 0.6 : 0.9);
     const fail = (error: string) => ({ ...base, error, add: () => {} });
     if ("area" in layer) {
