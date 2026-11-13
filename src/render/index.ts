@@ -7,12 +7,21 @@ export { poweredByHtml } from "./poweredBy.js";
 export { renderKpi, type KpiOptions } from "./kpi.js";
 export { renderTable, type TableOptions } from "./table.js";
 export {
+  addMapLayers,
   areaCode,
+  boundarySource,
+  legendElement,
   MAP_STYLES,
   MapPlacementError,
   renderMap,
   ROWS_LAYER,
+  type AddedMapLayer,
+  type AddMapLayersOptions,
   type AreaLevel,
+  type Legend,
+  type LegendEntry,
+  type MapLayerRows,
   type MapLayer,
   type MapRenderOptions,
 } from "./data-map.js";
+export { PALETTES, type Palette } from "./palette.js";
