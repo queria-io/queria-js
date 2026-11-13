@@ -2,6 +2,7 @@ export {
   closeAll,
   connect,
   plain,
+  plainRows,
   type Connection,
   type ConnectOptions,
   type Dataset,
