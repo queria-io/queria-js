@@ -1,5 +1,6 @@
 import { type Annotation, withAnnotations } from "./annotate.js";
 import { SERIES } from "./palette.js";
+import { type Encoding, isView, keysOf, type View } from "./view.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
@@ -115,15 +116,7 @@ const isLight = (color: string): boolean | undefined => {
 /** Dark when the element's text is light, so the chart follows the page without being told. */
 export const toneOf = (color: string): Tone => (isLight(color) ? "dark" : "light");
 
-type Encoding = Record<string, { field?: unknown; [k: string]: unknown } | undefined>;
-type View = { mark?: unknown; encoding?: Encoding; layer?: View[]; [k: string]: unknown };
-
-const isView = (v: unknown): v is View => typeof v === "object" && v !== null && !Array.isArray(v);
-
 const markType = (mark: unknown): unknown => (typeof mark === "object" && mark !== null && "type" in mark ? mark.type : mark);
-
-// Text keys of a value. Dates also match their day, as in "2020-04-01".
-const keysOf = (v: unknown): string[] => (v instanceof Date ? [v.toISOString(), v.toISOString().slice(0, 10)] : [String(v)]);
 
 /**
  * Color the highlighted values purple and the rest gray. With a color field, the series named in values are purple;
