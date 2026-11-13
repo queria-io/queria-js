@@ -1,5 +1,6 @@
 import type { Dataset } from "../client.js";
-import { chartTheme, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { chartTheme, isComposite, isRows, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
 import { logo } from "./poweredBy.js";
 
@@ -26,19 +27,11 @@ const PADDING = 24;
 const FOOTER = 36;
 const SIZE = 13;
 
-const isComposite = (spec: ChartSpec): boolean => ["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec);
-
 // Width of a line in ems: full-width characters take 1, others about 0.6.
 const ems = (text: string): number => [...text].reduce((n, c) => n + ((c.codePointAt(0) ?? 0) > 0x2e7f ? 1 : 0.6), 0);
 
-const sourcesLine = (datasets: readonly Dataset[]): string =>
-  "Source: " +
-  datasets
-    .map((d) => {
-      const licenses = (d.licenses ?? []).map((l) => l.title ?? l.id ?? "").filter(Boolean);
-      return (d.title ?? d.qualified_name) + (licenses.length ? ` (${licenses.join(", ")})` : "");
-    })
-    .join("; ");
+// The same line as under the charts on the page, as plain text.
+const sourcesLine = (datasets: readonly Dataset[]): string => `Source: ${sourcesText(datasets, (_, text) => text)}`;
 
 const sizeOf = (svg: string): [number, number] => {
   const root = /<svg[^>]*>/.exec(svg)?.[0] ?? "";
@@ -52,9 +45,9 @@ const withFooter = (chart: string, datasets: readonly Dataset[], tone: Tone, fon
   const { fg, muted } = TONES[tone];
   const [logoW, logoH] = [Math.round((SIZE + 3) * 4.17), SIZE + 3];
   const text = sourcesLine(datasets);
-  const room = w - PADDING * 3 - logoW;
+  const room = Math.max(w - PADDING * 3 - logoW, 0);
   // A long line is squeezed to fit rather than cut, so every source stays named.
-  const fit = ems(text) * SIZE > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : "";
+  const fit = room > 0 && ems(text) * SIZE > room ? ` textLength="${room}" lengthAdjust="spacingAndGlyphs"` : "";
   const y = h + FOOTER / 2;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h + FOOTER}" viewBox="0 0 ${w} ${h + FOOTER}">` +
@@ -75,16 +68,18 @@ export const chartSvg = async (
   { width = 600, height = 315, theme = "light", highlight, sources = [], font = "system-ui, sans-serif", japanese = true, config }: ChartImageOptions = {},
 ): Promise<string> => {
   const [vega, vl, { expressionInterpreter }] = await Promise.all([import("vega"), import("vega-lite"), import("vega-interpreter")]);
-  const all = Array.isArray(data) ? (data as Rows) : Object.values(data as Record<string, Rows>).flat();
+  const all = isRows(data) ? data : Object.values(data).flat();
   const shown = highlight === undefined ? spec : withHighlight(spec, all, [highlight].flat(), TONES[theme].accent, TONES[theme].base);
   const footer = sources.length > 0 ? FOOTER : 0;
   const full = {
     ...withData(shown, data),
     ...(isComposite(spec) ? {} : { width, height: height - footer, autosize: { type: "fit", contains: "padding" } }),
     padding: PADDING,
-    config: { ...chartTheme(theme, font, japanese), background: BACKGROUND[theme], ...config },
   };
-  const { spec: compiled } = vl.compile(full as Parameters<typeof vl.compile>[0]);
+  // The theme goes in as the compile option, so the spec's own config is merged over it, as renderChart does.
+  const { spec: compiled } = vl.compile(full as Parameters<typeof vl.compile>[0], {
+    config: { ...chartTheme(theme, font, japanese), background: BACKGROUND[theme], ...config },
+  });
   const view = new vega.View(vega.parse(compiled, undefined, { ast: true }), { renderer: "none", expr: expressionInterpreter });
   try {
     const svg = await view.toSVG();

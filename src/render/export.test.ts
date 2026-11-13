@@ -13,6 +13,17 @@ describe("chartSvg", () => {
     expect(svg).toContain("#a1a1aa");
   });
 
+  it("keeps the spec's own config over the theme", async () => {
+    const svg = await chartSvg({ ...spec, encoding: { ...spec.encoding, color: { field: "name" } }, config: { legend: { disable: true } } }, rows);
+    expect(svg).not.toContain('class="mark-group role-legend"');
+  });
+
+  it("leaves panels split by a row encoding at their own size", async () => {
+    const svg = await chartSvg({ ...spec, encoding: { ...spec.encoding, row: { field: "name" } } }, rows, { width: 600, height: 300 });
+    // Asked-for width on each panel would make the image wider than asked (746 px here)
+    expect(size(svg)?.[0]).toBeLessThan(600);
+  });
+
   it("colors the highlighted value purple", async () => {
     expect(await chartSvg(spec, rows, { highlight: "b", theme: "dark" })).toContain("#a985e6");
   });

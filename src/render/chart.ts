@@ -9,7 +9,17 @@ export type Rows = readonly Record<string, unknown>[];
 // Vega writes an id into every row it reads, so hand it copies: the caller's rows may be frozen or shared.
 const copy = (rows: Rows): Record<string, unknown>[] => rows.map((r) => ({ ...r }));
 
-const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
+export const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
+
+/**
+ * Whether the spec lays out several views: concatenated, repeated, or split into panels by a facet operator or by a
+ * row, column or facet encoding. Vega-Lite sizes each view of these by itself, so width "container" and autosize fit do not apply.
+ */
+export const isComposite = (spec: ChartSpec): boolean => {
+  if (["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec)) return true;
+  const encoding: unknown = "encoding" in spec ? spec.encoding : undefined;
+  return typeof encoding === "object" && encoding !== null && ["row", "column", "facet"].some((k) => k in encoding);
+};
 
 const ownDatasets = (spec: ChartSpec): object => {
   const d: unknown = "datasets" in spec ? spec.datasets : undefined;
@@ -24,9 +34,8 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   const named = isRows(data) ? { "": data } : data;
   const { "": main, ...rest } = named;
   // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
-  const composite = ["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec);
   return {
-    ...(composite ? {} : { width: "container" }),
+    ...(isComposite(spec) ? {} : { width: "container" }),
     ...spec,
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
     // The spec's own datasets stay; named rows are laid over them.

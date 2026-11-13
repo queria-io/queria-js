@@ -5,11 +5,12 @@ import { logo } from "./poweredBy.js";
 const link = (url: string | undefined, text: string): string =>
   url && /^https?:\/\//.test(url) ? `<a href="${esc(url)}" target="_blank" rel="noopener" style="color:inherit">${esc(text)}</a>` : esc(text);
 
-const sourcesText = (datasets: readonly Dataset[]): string =>
+/** The sources and licenses of the datasets in one line. `name` writes each name, as a link or as text. */
+export const sourcesText = (datasets: readonly Dataset[], name: (url: string | undefined, text: string) => string = link): string =>
   datasets
     .map((d) => {
-      const licenses = (d.licenses ?? []).map((l) => link(l.url, l.title ?? l.id ?? "")).filter(Boolean);
-      return link(d.page_url, d.title ?? d.qualified_name) + (licenses.length ? ` (${licenses.join(", ")})` : "");
+      const licenses = (d.licenses ?? []).map((l) => name(l.url, l.title ?? l.id ?? "")).filter(Boolean);
+      return name(d.page_url, d.title ?? d.qualified_name) + (licenses.length ? ` (${licenses.join(", ")})` : "");
     })
     .join("; ");
 
