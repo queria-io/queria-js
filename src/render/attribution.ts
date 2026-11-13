@@ -21,13 +21,21 @@ const sqlHtml = (sql: string, url: string): string =>
   `<pre style="margin:4px 0;padding:8px;overflow:auto;white-space:pre-wrap;border-radius:6px;background:rgba(127,127,127,.12);font:12px/1.5 ui-monospace,monospace">${esc(sql)}</pre>` +
   `${link(url, "Open in Queria")}</details>`;
 
+/** The button that saves the chart as an image. The element or component that draws the chart handles its clicks. */
+export const SAVE_IMAGE_CLASS = "queria-save-image";
+
+const saveImageHtml =
+  `<button type="button" class="${SAVE_IMAGE_CLASS}" style="flex:none;margin-left:auto;padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer">Save image</button>`;
+
 /**
  * The line under a chart or map: the sources and licenses of the datasets on the left, as licenses such as CC BY
  * require wherever the data is shown, and the Queria logo on the right. Colors follow the page's text color.
+ * With `saveImage`, a "Save image" button sits before the logo.
  */
-export const attributionHtml = (datasets: readonly Dataset[], sql?: { sql: string; url: string }): string =>
+export const attributionHtml = (datasets: readonly Dataset[], sql?: { sql: string; url: string }, { saveImage = false } = {}): string =>
   '<div class="queria-attribution" style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px;font:12px/1.5 system-ui,sans-serif;opacity:.7">' +
   `<span>${datasets.length ? `Source: ${sourcesText(datasets)}` : ""}</span>` +
+  (saveImage ? saveImageHtml : "") +
   '<a href="https://queria.io/" target="_blank" rel="noopener" aria-label="Queria" style="flex:none;display:inline-block;height:14px;width:59px;color:inherit">' +
   `${logo}</a></div>` +
   (sql ? sqlHtml(sql.sql, sql.url) : "");

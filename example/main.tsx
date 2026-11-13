@@ -27,7 +27,7 @@ const spec = {
 createRoot(document.getElementById("root")!).render(
   <QueriaProvider datasets={["queria/e_stat"]} apiUrl="">
     <Kpi sql={sql} value="population" label="人口" unit="人" />
-    <Chart sql={sql} spec={spec} />
+    <Chart sql={sql} spec={spec} saveImage />
     <Table sql={sql} />
     <DataMap sql={tokyo} layer={{ area: "city", code: "lg_code", color: "population", label: "lg_code" }} style="/style.json" />
   </QueriaProvider>,

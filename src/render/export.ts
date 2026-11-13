@@ -1,5 +1,5 @@
 import type { Dataset } from "../client.js";
-import { chartTheme, isComposite, isRows, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { chartTheme, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
 import { withAnnotations, type Annotation } from "./annotate.js";
 import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
@@ -114,4 +114,37 @@ export const chartPng = async (
   return new Promise((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("The chart could not be made into a PNG"))), "image/png"),
   );
+};
+
+/** A file name from the chart's title, without characters that file systems reject. "chart" when it has none. */
+export const imageName = (spec: ChartSpec): string => {
+  const title: unknown = "title" in spec ? spec.title : undefined;
+  const text = typeof title === "string" ? title : typeof title === "object" && title !== null && "text" in title ? String(title.text) : "";
+  return `${text.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 80) || "chart"}.png`;
+};
+
+/** Options that make the image look like the chart drawn in `el`: its colors, font and number labels, unless `options` set them. */
+export const imageOptionsOf = (el: HTMLElement, { theme, ...options }: ChartImageOptions): ChartImageOptions => {
+  const style = getComputedStyle(el);
+  return {
+    theme: theme ?? toneOf(style.color),
+    font: fontOf(style.fontFamily),
+    japanese: (el.closest("[lang]")?.getAttribute("lang") ?? "ja").startsWith("ja"),
+    ...options,
+  };
+};
+
+/** Draw the chart with chartPng and save it as a file. Used by the "Save image" button of the elements and React components. */
+export const saveChartPng = async (
+  spec: ChartSpec,
+  data: Rows | Readonly<Record<string, Rows>>,
+  options: ChartImageOptions = {},
+): Promise<void> => {
+  const url = URL.createObjectURL(await chartPng(spec, data, options));
+  try {
+    Object.assign(document.createElement("a"), { href: url, download: imageName(spec) }).click();
+  } finally {
+    // The click starts the download; the URL is let go once it has been read.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 };

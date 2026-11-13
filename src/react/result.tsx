@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Dataset } from "../client.js";
-import { attributionHtml } from "../render/attribution.js";
+import { attributionHtml, SAVE_IMAGE_CLASS } from "../render/attribution.js";
 import type { Rows } from "../render/chart.js";
 import { useQueria } from "./query.js";
 
@@ -74,15 +74,38 @@ const message = ({ values, error }: Result, drawError: unknown): string | null =
     : values.length === 0 ? "The SQL returned no rows."
     : null;
 
-/** The note (loading, no rows or the error), the drawing, then the sources and the SQL link. */
-export const Frame = ({ className, result, error, children }: { className: string; result: Result; error?: unknown; children: ReactNode }) => {
+/**
+ * The note (loading, no rows or the error), the drawing, then the sources and the SQL link.
+ * With `onSaveImage`, a "Save image" button in the line of sources calls it once the drawing is shown.
+ */
+export const Frame = ({
+  className,
+  result,
+  error,
+  onSaveImage,
+  children,
+}: {
+  className: string;
+  result: Result;
+  error?: unknown;
+  onSaveImage?: () => Promise<void>;
+  children: ReactNode;
+}) => {
   const note = message(result, error);
   const { sql, url, sources } = result;
+  const saveImage = onSaveImage !== undefined && note === null;
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!(e.target instanceof Element) || e.target.closest(`.${SAVE_IMAGE_CLASS}`) === null) return;
+    onSaveImage?.().catch((err: unknown) => console.error("[queria] Save image:", err));
+  };
   return (
     <div className={className}>
       {note === null ? null : <p className="queria-note">{note}</p>}
       {children}
-      <div dangerouslySetInnerHTML={{ __html: attributionHtml(sources, sql !== undefined && url ? { sql, url } : undefined) }} />
+      <div
+        onClick={saveImage ? onClick : undefined}
+        dangerouslySetInnerHTML={{ __html: attributionHtml(sources, sql !== undefined && url ? { sql, url } : undefined, { saveImage }) }}
+      />
     </div>
   );
 };
