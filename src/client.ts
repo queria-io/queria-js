@@ -108,6 +108,25 @@ const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string 
   }
 };
 
+/** Arrow's type id of DECIMAL. */
+const DECIMAL = 7;
+
+type ArrowTable = { schema: { fields: { name: string; type: { typeId: number; scale?: number } }[] }; toArray(): unknown[] };
+
+/**
+ * The rows of an Arrow table as plain objects. DECIMAL comes as an integer scaled by 10^scale, so it is divided
+ * back (1.5 in a DECIMAL(9,1) would otherwise be 15).
+ */
+export const plainRows = (table: ArrowTable): Record<string, unknown>[] => {
+  const scales = table.schema.fields.flatMap((f) => (f.type.typeId === DECIMAL && f.type.scale ? [[f.name, 10 ** f.type.scale] as const] : []));
+  return table.toArray().map((r) => {
+    const row = plain(r) as Record<string, unknown>;
+    return scales.length === 0
+      ? row
+      : { ...row, ...Object.fromEntries(scales.map(([k, d]) => [k, typeof row[k] === "number" ? row[k] / d : row[k]])) };
+  });
+};
+
 /** Convert Arrow values to plain JS: lists to arrays, structs to objects, BIGINT and HUGEINT to number. */
 export const plain = (v: unknown): unknown => {
   if (typeof v === "bigint") return Number(v);
@@ -232,7 +251,7 @@ export const connect = ({ datasets, apiUrl = API, wasmUrl = WASM, token }: Conne
     const run = async (): Promise<T[]> => {
       const conn = await db.connect();
       try {
-        return (await conn.query(query)).toArray().map((r) => plain(r) as T);
+        return plainRows(await conn.query(query)) as T[];
       } finally {
         await conn.close();
       }
