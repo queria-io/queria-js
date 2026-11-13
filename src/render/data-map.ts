@@ -722,8 +722,14 @@ export const renderMap = async (
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
     // Small areas are fitted to their city first. Once their shapes are drawn, fit the shapes themselves,
     // or a trade area of a few hundred meters shows as a speck in a whole city.
+    // Skip it when the camera has moved since, by the user or by the caller, so their view is kept.
     if ("area" in layer && layer.area === "small_area") {
+      let moved = false;
+      map.once("movestart", () => {
+        moved = true;
+      });
       map.once("idle", () => {
+        if (moved) return;
         const box = featuresBounds(map.queryRenderedFeatures({ layers: [ROWS_LAYER] }));
         if (box) map.fitBounds(box, { padding: 24, maxZoom: 15, duration: 0 });
       });
