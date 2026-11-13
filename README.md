@@ -24,6 +24,8 @@ Load the elements from jsDelivr. Vega-Lite, MapLibre and DuckDB WASM are loaded 
 
 Charts are gray by default. To make a point, color values purple with `highlight`: a name on an axis (`highlight="世田谷区"`), a series of a color field, or a JSON array of them. Dates match their day (`"2020-04-01"`). When no value is found, the chart keeps its colors. In JavaScript, `renderChart(el, spec, rows, { highlight })` returns `highlighted`, which says whether a value was found. To start loading the chart code while the data loads, call `preloadChart()`.
 
+To explain a point, add a short note with an arrow: `annotations='[{"at": "2020", "text": "Station opened"}]'`. `at` picks the row the arrow points to, by a value of the x, y or color field, or by several values that must all match (`["2020", "Setagaya"]`). The note is placed 20px right and 30px above the point; `dx` and `dy` move it (in pixels). Notes work on single and layered charts. Notes whose row is not found are left out, and `renderChart` returns `annotated`, the number of notes drawn. In React and JavaScript, pass `annotations` the same way.
+
 Under each chart, map and table that ran SQL, a folded "SQL" section shows the query and links to queria.io, where readers can rerun and change it without signing in, and save it as a report. Charts open as charts. In JavaScript, `await q.shareUrl(sql, spec)` returns the link.
 
 Write each chart, map or table as one SQL statement, with its steps as `WITH` clauses. The link then carries everything needed to reproduce it.
@@ -67,7 +69,7 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
 
 ## Images
 
-To post a chart on social media, make it a PNG image: `chartPng(spec, rows, { sources, highlight })` returns a 1200 × 630 PNG blob in Queria's look, on a solid background, with the sources and the Queria logo under the chart. Pass the datasets from `await q.sources(sql)` as `sources`. `theme` picks light (the default) or dark colors; `width` and `height` set the size in CSS pixels (600 × 315 by default) and `scale` the pixels per CSS pixel (2 by default).
+To post a chart on social media, make it a PNG image: `chartPng(spec, rows, { sources, highlight, annotations })` returns a 1200 × 630 PNG blob in Queria's look, on a solid background, with the sources and the Queria logo under the chart. Pass the datasets from `await q.sources(sql)` as `sources`. `theme` picks light (the default) or dark colors; `width` and `height` set the size in CSS pixels (600 × 315 by default) and `scale` the pixels per CSS pixel (2 by default).
 
 ```ts
 import { chartPng, connect } from "queria";
@@ -87,6 +89,16 @@ Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), do
 
 Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
 
+## Numbers
+
+```html
+<queria-kpi datasets="queria/e_stat" value="population" label="人口" unit="人"
+  sql="SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
+       WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-kpi>
+```
+
+Shows the `value` column of the last row large, with its change from the row before it ("前年比 +0.9% (+1.3万人)"). To compare with another column of the last row, name it in `compare`. Numbers from 10,000 are written with 万 and 億 on Japanese pages and K, M, B elsewhere; `compact="false"` writes them in full. With `unit="%"`, the change is in points. `compare-label` replaces "前年比". In React, `<Kpi sql={sql} value="population" />`; in JavaScript, `renderKpi(el, rows, { value })`.
+
 ## Maps
 
 ```html
@@ -94,7 +106,7 @@ Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in J
   layer='{"area": "city", "code": "lg_code", "color": "population", "label": "lg_code"}'></queria-map>
 ```
 
-`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. The package links maplibre-gl's CSS unless the page already does. The map height is the CSS variable `--queria-map-height` (400px by default).
+`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column), by position (`lng` and `lat` columns) or by GeoJSON geometries (`geometry` is a column of GeoJSON text or objects, such as `ST_AsGeoJSON(geom)`). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`, which returns the MapLibre map: listen to the layer `ROWS_LAYER` for clicks on the rows (a feature has the area `code`, or the `row` index for geometries). The package links maplibre-gl's CSS unless the page already has it. The map height is the CSS variable `--queria-map-height` (400px by default).
 
 With a bundler, maps need `maplibre-gl`; install it only when you use maps. Charts need nothing more: their code is loaded on first use.
 

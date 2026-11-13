@@ -1,4 +1,6 @@
+import { type Annotation, withAnnotations } from "./annotate.js";
 import { SERIES } from "./palette.js";
+import { type Encoding, isView, keysOf, type View } from "./view.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
@@ -123,30 +125,41 @@ const isLight = (color: string): boolean | undefined => {
 /** Dark when the element's text is light, so the chart follows the page without being told. */
 export const toneOf = (color: string): Tone => (isLight(color) ? "dark" : "light");
 
-type Encoding = Record<string, { field?: unknown; [k: string]: unknown } | undefined>;
-type View = { mark?: unknown; encoding?: Encoding; layer?: View[]; [k: string]: unknown };
-
-const isView = (v: unknown): v is View => typeof v === "object" && v !== null && !Array.isArray(v);
-
 const markType = (mark: unknown): unknown => (typeof mark === "object" && mark !== null && "type" in mark ? mark.type : mark);
-
-// Text keys of a value. Dates also match their day, as in "2020-04-01".
-const keysOf = (v: unknown): string[] => (v instanceof Date ? [v.toISOString(), v.toISOString().slice(0, 10)] : [String(v)]);
 
 /**
  * Color the highlighted values purple and the rest gray. With a color field, the series named in values are purple;
  * without one, the marks whose x, y or detail value is in values are (category axes are tried before number axes).
- * Text marks keep their color. Layers are colored one by one. When no value is found, the spec is returned as it is.
+ * Text marks keep their color, and so do colors by a number (a heatmap). Layers are colored one by one, each with
+ * the rows it reads: those named by its data.name, or else those of the view around it. When no value is found, the
+ * spec is returned as it is.
  */
-export const withHighlight = (spec: ChartSpec, rows: Rows, values: readonly unknown[], accent: string, base: string): ChartSpec => {
+export const withHighlight = (
+  spec: ChartSpec,
+  data: Rows | Readonly<Record<string, Rows>>,
+  values: readonly unknown[],
+  accent: string,
+  base: string,
+): ChartSpec => {
   // Compared as text, so "2020" from an HTML attribute matches the number 2020 in the rows.
   const texts = values.map(String);
   const hit = (v: unknown): boolean => keysOf(v).some((k) => texts.includes(k));
-  const color = (enc: Encoding): Encoding => {
+  const named = (v: View): Rows | undefined => {
+    const name = isView(v.data) ? v.data.name : undefined;
+    return isRows(data) || typeof name !== "string" ? undefined : data[name];
+  };
+  const color = (enc: Encoding, rows: Rows): Encoding => {
     const field = enc.color?.field;
     if (typeof field === "string") {
-      const domain = [...new Set(rows.map((r) => r[field]))];
-      return domain.some(hit) ? { ...enc, color: { ...enc.color, scale: { domain, range: domain.map((d) => (hit(d) ? accent : base)) } } } : enc;
+      if (enc.color?.type === "quantitative") return enc;
+      const { scheme: _, ...scale } = isView(enc.color?.scale) ? enc.color.scale : {};
+      // The author's order of the series, or else the order of the rows
+      const domain = Array.isArray(scale.domain)
+        ? (scale.domain as unknown[])
+        : [...new Set(rows.map((r) => r[field]))].filter((d) => d !== undefined);
+      return domain.some(hit)
+        ? { ...enc, color: { ...enc.color, scale: { ...scale, domain, range: domain.map((d) => (hit(d) ? accent : base)) } } }
+        : enc;
     }
     const key = ["x", "y", "detail"]
       .sort((a, b) => Number(enc[a]?.type === "quantitative") - Number(enc[b]?.type === "quantitative"))
@@ -162,18 +175,21 @@ export const withHighlight = (spec: ChartSpec, rows: Rows, values: readonly unkn
       },
     };
   };
-  const paint = (v: View): View => {
-    const encoding = v.encoding && markType(v.mark) !== "text" ? color(v.encoding) : v.encoding;
-    const layer = v.layer?.map(paint);
+  const paint = (v: View, around: Rows): View => {
+    const rows = named(v) ?? around;
+    const encoding = v.encoding && markType(v.mark) !== "text" ? color(v.encoding, rows) : v.encoding;
+    const layer = v.layer?.map((l) => paint(l, rows));
     const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
     return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
   };
-  return isView(spec) ? paint(spec) : spec;
+  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
 };
 
 export type ChartOptions = {
   /** Values to color purple, such as a name on the axis or a series. Everything else stays gray. */
   highlight?: unknown;
+  /** Notes with arrows to the rows they are about. See Annotation. */
+  annotations?: readonly Annotation[];
   /** Vega-Lite config. Its top-level keys replace those of chartTheme, and the spec's own config is merged over it. */
   config?: Record<string, unknown>;
   /** Export and source menu. Hidden by default. */
@@ -220,21 +236,23 @@ const rowCount = (data: Rows | Readonly<Record<string, Rows>>): number =>
 /**
  * Draw a Vega-Lite chart. What draws it is loaded on first use, or earlier with preloadChart. Expressions are run by the
  * interpreter, so charts draw on pages whose Content Security Policy has no unsafe-eval.
- * Returns the Vega view, a function that removes the chart, and whether a highlighted value was found.
+ * Returns the Vega view, a function that removes the chart, whether a highlighted value was found, and how many
+ * annotations were drawn.
  * Sources and licenses are not drawn here; the elements and React components add them under the chart.
  */
 export const renderChart = async (
   el: HTMLElement,
   spec: ChartSpec,
   data: Rows | Readonly<Record<string, Rows>>,
-  { config, actions = false, i18n, theme, renderer, highlight }: ChartOptions = {},
-): Promise<Pick<Result, "view" | "finalize"> & { highlighted: boolean }> => {
+  { config, actions = false, i18n, theme, renderer, highlight, annotations = [] }: ChartOptions = {},
+): Promise<Pick<Result, "view" | "finalize"> & { highlighted: boolean; annotated: number }> => {
   const style = getComputedStyle(el);
   const tone = theme ?? toneOf(style.color);
   const { embed, expressionInterpreter } = await loadDrawer();
-  const all = isRows(data) ? data : Object.values(data).flat();
-  const shown = highlight === undefined ? spec : withHighlight(spec, all, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
-  const { view, finalize } = await embed(el, withData(shown, data) as VisualizationSpec, {
+  const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
+  const { fg, muted } = TONES[tone];
+  const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
+  const { view, finalize } = await embed(el, withData(noted.spec, data) as VisualizationSpec, {
     // Read the spec as Vega-Lite even when its $schema says Vega
     mode: "vega-lite",
     ast: true,
@@ -245,6 +263,6 @@ export const renderChart = async (
     config: { ...chartTheme(tone, fontOf(style.fontFamily), (el.closest("[lang]")?.getAttribute("lang") ?? "ja").startsWith("ja")), ...config },
     tooltip: { theme: tone },
   });
-  // Whether a highlighted value was found. When none was, the chart is drawn as if no highlight was given
-  return { view, finalize, highlighted: shown !== spec };
+  // Whether a highlighted value was found, and how many notes were drawn. Values that are not found are left out
+  return { view, finalize, highlighted: shown !== spec, annotated: noted.added };
 };

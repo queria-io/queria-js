@@ -78,4 +78,20 @@ describe("withHighlight", () => {
     expect(spec).toMatchObject({ layer: [{ encoding: { color: { field: "name", scale: { domain: ["a", "b"], range: ["G", "P"] } } } }, { encoding: { y: { field: "name" } } }] });
     expect(JSON.stringify(spec)).not.toContain("condition");
   });
+  it("reads each layer's own named rows", () => {
+    const spec = withHighlight(
+      { layer: [{ data: { name: "a" }, mark: "line", encoding: { color: { field: "name" } } }, { data: { name: "b" }, mark: "rule" }] },
+      { a: [{ name: "x" }, { name: "y" }], b: [{ v: 1 }] },
+      ["y"],
+      "P",
+      "G",
+    );
+    expect(spec).toHaveProperty("layer.0.encoding.color.scale", { domain: ["x", "y"], range: ["G", "P"] });
+  });
+  it("keeps the author's series order and leaves colors by a number alone", () => {
+    const series = withHighlight({ mark: "line", encoding: { color: { field: "name", scale: { domain: ["b", "a"], scheme: "tableau10", zero: false } } } }, rows, ["a"], "P", "G");
+    expect(series).toHaveProperty("encoding.color.scale", { domain: ["b", "a"], range: ["G", "P"], zero: false });
+    const heat = { mark: "rect", encoding: { x: { field: "name" }, color: { field: "v", type: "quantitative" } } };
+    expect(withHighlight(heat, rows, ["1"], "P", "G")).toEqual(heat);
+  });
 });

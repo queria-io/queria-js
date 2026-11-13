@@ -1,8 +1,10 @@
 import { connect, parseDatasets } from "../client.js";
 import { attributionHtml } from "../render/attribution.js";
+import type { Annotation } from "../render/annotate.js";
 import { renderChart } from "../render/chart.js";
 import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
+import { renderKpi } from "../render/kpi.js";
 import { renderTable } from "../render/table.js";
 import { poweredByHtml } from "../render/poweredBy.js";
 
@@ -12,6 +14,9 @@ const themeOf = (value: string | null): "light" | "dark" | undefined => (value =
 /** The highlight attribute: one value, or a JSON array of values. */
 const highlightOf = (value: string | null): unknown =>
   value === null || value === "" ? undefined : value.trimStart().startsWith("[") ? JSON.parse(value) : value;
+
+/** The annotations attribute: a JSON array of { at, text, dx, dy }. */
+const annotationsOf = (value: string | null): Annotation[] | undefined => (value ? [JSON.parse(value)].flat() : undefined);
 
 /** A line of text in place of the chart or map. Errors keep their line breaks. */
 const note = (text: string): string =>
@@ -93,9 +98,14 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
  * rows came from in `datasets` so their sources are shown.
  * `api-url` replaces the Queria API, for example with a staging host. `theme` is light or dark; by default the chart
  * is dark when the element's text color is light. `highlight` colors one value (or a JSON array of values) purple.
+ * `annotations` adds notes with arrows, as a JSON array of { at, text, dx, dy }.
  */
-export class QueriaChart extends dataElement("spec", ["theme", "highlight"], "<div></div>", (box, rows, attr) =>
-  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, { theme: themeOf(attr("theme")), highlight: highlightOf(attr("highlight")) }),
+export class QueriaChart extends dataElement("spec", ["theme", "highlight", "annotations"], "<div></div>", (box, rows, attr) =>
+  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, {
+    theme: themeOf(attr("theme")),
+    highlight: highlightOf(attr("highlight")),
+    annotations: annotationsOf(attr("annotations")),
+  }),
 ) {}
 
 /**
@@ -118,6 +128,23 @@ export class QueriaTable extends dataElement(null, ["limit"], "<div></div>", asy
   renderTable(box, rows, { limit: Number(attr("limit") ?? 100) || 100 }),
 ) {}
 
+/**
+ * <queria-kpi datasets="queria/e_stat" sql="..." value="population" label="人口" unit="人">
+ * Runs the SQL and shows the `value` column of the last row large, with its change from the row before it, followed by
+ * the sources. `compare` names a column of the last row to compare with instead; `compare-label` replaces "前年比";
+ * `compact="false"` writes the number in full. `rows`, `api-url` work as on <queria-chart>.
+ */
+export class QueriaKpi extends dataElement("value", ["compare", "label", "unit", "compare-label", "compact"], "<div></div>", async (box, rows, attr) =>
+  renderKpi(box, rows, {
+    value: attr("value") ?? "",
+    compare: attr("compare") ?? undefined,
+    label: attr("label") ?? undefined,
+    unit: attr("unit") ?? undefined,
+    compareLabel: attr("compare-label") ?? undefined,
+    compact: attr("compact") !== "false",
+  }),
+) {}
+
 /** <queria-powered-by> */
 export class QueriaPoweredBy extends HTMLElement {
   connectedCallback() {
@@ -125,7 +152,7 @@ export class QueriaPoweredBy extends HTMLElement {
   }
 }
 
-const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-table": QueriaTable, "queria-powered-by": QueriaPoweredBy };
+const elements = { "queria-chart": QueriaChart, "queria-map": QueriaMap, "queria-table": QueriaTable, "queria-kpi": QueriaKpi, "queria-powered-by": QueriaPoweredBy };
 
 /** Register the custom elements. Safe to call more than once. */
 export const defineElements = (): void =>
@@ -136,6 +163,7 @@ declare global {
     "queria-chart": QueriaChart;
     "queria-map": QueriaMap;
     "queria-table": QueriaTable;
+    "queria-kpi": QueriaKpi;
     "queria-powered-by": QueriaPoweredBy;
   }
 }

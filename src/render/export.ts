@@ -1,5 +1,6 @@
 import type { Dataset } from "../client.js";
 import { chartTheme, isComposite, isRows, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { withAnnotations, type Annotation } from "./annotate.js";
 import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
 import { logo } from "./poweredBy.js";
@@ -12,6 +13,8 @@ export type ChartImageOptions = {
   theme?: Tone;
   /** Values to color purple, as in renderChart. */
   highlight?: unknown;
+  /** Notes with arrows to the rows they are about, as in renderChart. */
+  annotations?: readonly Annotation[];
   /** Datasets to name in a line under the chart, with the Queria logo. Without them, the image is the chart alone. */
   sources?: readonly Dataset[];
   /** Font of the chart. The image uses the fonts installed where it is drawn. */
@@ -65,14 +68,15 @@ const withFooter = (chart: string, datasets: readonly Dataset[], tone: Tone, fon
 export const chartSvg = async (
   spec: ChartSpec,
   data: Rows | Readonly<Record<string, Rows>>,
-  { width = 600, height = 315, theme = "light", highlight, sources = [], font = "system-ui, sans-serif", japanese = true, config }: ChartImageOptions = {},
+  { width = 600, height = 315, theme = "light", highlight, annotations = [], sources = [], font = "system-ui, sans-serif", japanese = true, config }: ChartImageOptions = {},
 ): Promise<string> => {
   const [vega, vl, { expressionInterpreter }] = await Promise.all([import("vega"), import("vega-lite"), import("vega-interpreter")]);
-  const all = isRows(data) ? data : Object.values(data).flat();
-  const shown = highlight === undefined ? spec : withHighlight(spec, all, [highlight].flat(), TONES[theme].accent, TONES[theme].base);
+  const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[theme].accent, TONES[theme].base);
+  const { fg, muted } = TONES[theme];
+  const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const footer = sources.length > 0 ? FOOTER : 0;
   const full = {
-    ...withData(shown, data),
+    ...withData(noted.spec, data),
     ...(isComposite(spec) ? {} : { width, height: height - footer, autosize: { type: "fit", contains: "padding" } }),
     padding: PADDING,
   };

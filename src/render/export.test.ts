@@ -24,6 +24,10 @@ describe("chartSvg", () => {
     expect(size(svg)?.[0]).toBeLessThan(600);
   });
 
+  it("draws annotations", async () => {
+    expect(await chartSvg(spec, rows, { annotations: [{ at: "b", text: "最大" }] })).toContain("最大");
+  });
+
   it("colors the highlighted value purple", async () => {
     expect(await chartSvg(spec, rows, { highlight: "b", theme: "dark" })).toContain("#a985e6");
   });
