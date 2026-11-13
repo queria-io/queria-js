@@ -1,12 +1,12 @@
 import type { Dataset } from "../client.js";
-import { chartTheme, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { chartTheme, fitsPanels, panelFitter, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, withPanelWidth, type ChartSpec, type Rows, type Tone } from "./chart.js";
 import { withAnnotations, type Annotation } from "./annotate.js";
 import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
 import { logo } from "./poweredBy.js";
 
 export type ChartImageOptions = {
-  /** Width and height of the image in CSS pixels, sources line included. 600 × 315 by default, which chartPng makes 1200 × 630, the size of a social media card. Charts placed side by side or split into panels keep their own size. */
+  /** Width and height of the image in CSS pixels, sources line included. 600 × 315 by default, which chartPng makes 1200 × 630, the size of a social media card. Panels of a facet are sized to the width; charts placed side by side keep their own size. */
   width?: number;
   height?: number;
   /** Light or dark colors. Light by default. */
@@ -76,7 +76,7 @@ export const chartSvg = async (
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const footer = sources.length > 0 ? FOOTER : 0;
   const full = {
-    ...withData(noted.spec, data),
+    ...withData(fitsPanels(spec) ? withPanelWidth(noted.spec) : noted.spec, data),
     ...(isComposite(spec) ? {} : { width, height: height - footer, autosize: { type: "fit", contains: "padding" } }),
     padding: PADDING,
   };
@@ -86,6 +86,8 @@ export const chartSvg = async (
   });
   const view = new vega.View(vega.parse(compiled, undefined, { ast: true }), { renderer: "none", expr: expressionInterpreter });
   try {
+    // Panels are sized so that the chart is as wide as the image, padding left out.
+    if (fitsPanels(spec)) await view.runAsync().then(() => panelFitter(view)(width - PADDING * 2));
     const svg = await view.toSVG();
     return sources.length > 0 ? withFooter(svg, sources, theme, font) : svg;
   } finally {
