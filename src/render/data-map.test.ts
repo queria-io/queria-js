@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaCode, areaRows, boundsOf, colorScale, featuresBounds, geometriesOf, geometryFeatures, geometryParts, layerKind, legendOf, pointFeatures } from "./data-map.js";
+import { areaCode, areaRows, boundsOf, colorScale, geometriesBounds, geometriesOf, geometryFeatures, geometryParts, layerKind, legendOf, pointFeatures } from "./data-map.js";
 import { OTHER, SERIES } from "./palette.js";
 
 const RAMP = ["#edf8b1", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"];
@@ -114,12 +114,12 @@ describe("boundsOf", () => {
   });
 });
 
-describe("featuresBounds", () => {
-  it("spans the drawn features and is null without them", () => {
-    const a = { geometry: { type: "Polygon", coordinates: [[[140.1, 36.08], [140.12, 36.08], [140.11, 36.09], [140.1, 36.08]]] } };
-    const b = { geometry: { type: "MultiPolygon", coordinates: [[[[140.09, 36.07], [140.1, 36.07], [140.1, 36.075], [140.09, 36.07]]]] } };
-    expect(featuresBounds([a, b])).toEqual([140.09, 36.07, 140.12, 36.09]);
-    expect(featuresBounds([])).toBeNull();
+describe("geometriesBounds", () => {
+  it("spans the geometries and is null without them", () => {
+    const a = { type: "Polygon", coordinates: [[[140.1, 36.08], [140.12, 36.08], [140.11, 36.09], [140.1, 36.08]]] };
+    const b = { type: "MultiPolygon", coordinates: [[[[140.09, 36.07], [140.1, 36.07], [140.1, 36.075], [140.09, 36.07]]]] };
+    expect(geometriesBounds([a, b])).toEqual([140.09, 36.07, 140.12, 36.09]);
+    expect(geometriesBounds([])).toBeNull();
   });
 });
 
