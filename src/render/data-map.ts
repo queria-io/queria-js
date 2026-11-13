@@ -1,4 +1,4 @@
-import type { GeoJSONSourceSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
+import type { Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 import { type Rows, toneOf } from "./chart.js";
 import { BASE, RAMP, SERIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
@@ -14,6 +14,8 @@ export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: 
   color?: string;
   label?: string;
   opacity?: number;
+  /** The layer's name, shown as the legend's title instead of the column name. */
+  name?: string;
   /** Show what the colors mean. On by default when `color` is set. */
   legend?: boolean;
 };
@@ -44,31 +46,48 @@ const [LOW, HIGH] = RAMP;
 
 const hex = (rgb: readonly number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 
-/** What the colors mean: a range of numbers, or one color per value. */
+/**
+ * What the colors mean: a range of numbers, or one color per value. `mid` is the value at the middle of the ramp
+ * when the numbers are colored on a log scale.
+ */
 export type Legend =
-  | { column: string; min: number; max: number }
+  | { column: string; min: number; max: number; mid?: number }
   | { column: string; items: { label: string; color: string }[]; more: number };
 
 /**
- * A color for each row, and the legend. Numbers run from light to dark between the smallest and largest value;
- * other values get one color each, in order of first appearance.
+ * Whether to color positive numbers on a log scale: when the largest is at least ten times the smallest and the
+ * median falls in the lightest fifth of a linear ramp, so that half of the rows would look the same.
  */
-export const colorScale = (rows: Rows, column: string | undefined): { colors: string[]; legend: Legend | null } => {
+const isSkewed = (sorted: number[]): boolean => {
+  const [min, max, median] = [sorted[0], sorted[sorted.length - 1], sorted[sorted.length >> 1]];
+  return min > 0 && max >= min * 10 && (median - min) / (max - min) < 0.2;
+};
+
+/**
+ * A color for each row, and the legend. Numbers run from light to dark between the smallest and largest value,
+ * on a log scale when a few values are far larger than the rest; other values get one color each, in order of
+ * first appearance. Only the rows that are `placed` on the map count, so a total row without a shape does not
+ * stretch the range.
+ */
+export const colorScale = (
+  rows: Rows,
+  column: string | undefined,
+  placed: (i: number) => boolean = () => true,
+): { colors: string[]; legend: Legend | null } => {
   if (column === undefined) return { colors: rows.map(() => BASE), legend: null };
   const values = rows.map((r) => r[column]);
-  const nums = values.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-  if (nums.length > 0 && nums.length === values.filter((v) => v !== null && v !== undefined).length) {
-    // Spreading a large array into Math.min overflows the stack.
-    const min = nums.reduce((a, b) => Math.min(a, b));
-    const max = nums.reduce((a, b) => Math.max(a, b));
-    const colors = values.map((v) => {
-      if (typeof v !== "number" || !Number.isFinite(v)) return "#d4d4d4";
-      const t = max === min ? 1 : (v - min) / (max - min);
-      return hex(LOW.map((l, i) => l + (HIGH[i] - l) * t));
-    });
-    return { colors, legend: { column, min, max } };
+  const shown = values.filter((v, i) => placed(i) && v !== null && v !== undefined);
+  const nums = shown.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (nums.length > 0 && nums.length === shown.length) {
+    const sorted = nums.sort((a, b) => a - b);
+    const [min, max] = [sorted[0], sorted[sorted.length - 1]];
+    const log = isSkewed(sorted);
+    const at = log ? Math.log : (v: number) => v;
+    const t = (v: number) => (max === min ? 1 : Math.min(1, Math.max(0, (at(v) - at(min)) / (at(max) - at(min)))));
+    const colors = values.map((v) => (typeof v === "number" && Number.isFinite(v) ? hex(LOW.map((l, i) => l + (HIGH[i] - l) * t(v))) : "#d4d4d4"));
+    return { colors, legend: { column, min, max, ...(log && { mid: Math.sqrt(min * max) }) } };
   }
-  const order = [...new Set(values.map(String))];
+  const order = [...new Set(values.filter((_, i) => placed(i)).map(String))];
   const colorOf = (label: string): string => SERIES[order.indexOf(label) % SERIES.length];
   return {
     colors: values.map((v) => colorOf(String(v))),
@@ -79,19 +98,24 @@ export const colorScale = (rows: Rows, column: string | undefined): { colors: st
 
 const div = (style: string, text = ""): HTMLDivElement => Object.assign(document.createElement("div"), { textContent: text, style: style });
 
-/** The legend drawn over the map's top left corner. Labels come from the data, so they are set as text. */
-export const legendElement = (legend: Legend, theme: "light" | "dark"): HTMLElement => {
+/**
+ * The legend drawn over the map's top left corner, titled with the layer's name or else the column.
+ * Labels come from the data, so they are set as text.
+ */
+export const legendElement = (legend: Legend, theme: "light" | "dark", name?: string): HTMLElement => {
   const box = div(
     `position:absolute;top:8px;left:8px;z-index:2;max-width:45%;padding:6px 8px;border-radius:4px;font:12px/1.4 sans-serif;${theme === "dark" ? "background:rgba(23,23,23,.85);color:#e5e5e5" : "background:rgba(255,255,255,.9);color:#262626"}`,
   );
   box.className = "queria-legend";
-  box.append(div("font-weight:600;margin-bottom:2px", legend.column));
+  box.append(div("font-weight:600;margin-bottom:2px", name ?? legend.column));
   if ("min" in legend) {
     box.append(
       div(`width:120px;height:8px;border-radius:2px;background:linear-gradient(to right,${hex(LOW)},${hex(HIGH)})`),
       div("display:flex;justify-content:space-between;gap:8px", ""),
     );
-    box.lastElementChild?.append(div("", legend.min.toLocaleString()), div("", legend.max.toLocaleString()));
+    // On a log scale the middle value shows that colors are not proportional to the values.
+    const mid = legend.mid === undefined ? [] : [div("", legend.mid.toLocaleString(undefined, { maximumSignificantDigits: 2 }))];
+    box.lastElementChild?.append(div("", legend.min.toLocaleString()), ...mid, div("", legend.max.toLocaleString()));
     return box;
   }
   legend.items.forEach(({ label, color }) => {
@@ -120,8 +144,8 @@ const positionOf = (row: Record<string, unknown>, layer: { lng: string; lat: str
 };
 
 /** Points as GeoJSON. Rows without a valid position are left out. */
-export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: string }): GeoJSONSourceSpecification["data"] => {
-  const { colors } = colorScale(rows, layer.color);
+export const pointFeatures = (rows: Rows, layer: MapLayer & { lng: string; lat: string }): GeoJSON.FeatureCollection => {
+  const { colors } = colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], null));
   return {
     type: "FeatureCollection",
     features: rows.flatMap((r, i) => {
@@ -151,8 +175,8 @@ export const geometriesOf = (value: unknown): Geometry[] => {
 };
 
 /** Geometries as GeoJSON. Rows without a geometry are left out. A feature's `row` is the index of its row. */
-export const geometryFeatures = (rows: Rows, layer: MapLayer & { geometry: string }): GeoJSONSourceSpecification["data"] => {
-  const { colors } = colorScale(rows, layer.color);
+export const geometryFeatures = (rows: Rows, layer: MapLayer & { geometry: string }): GeoJSON.FeatureCollection => {
+  const { colors } = colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], null));
   return {
     type: "FeatureCollection",
     features: rows.flatMap((r, i) =>
@@ -165,18 +189,42 @@ export const geometryFeatures = (rows: Rows, layer: MapLayer & { geometry: strin
 const positions = (c: unknown): [number, number][] =>
   Array.isArray(c) && typeof c[0] === "number" && typeof c[1] === "number" ? [[c[0], c[1]]] : Array.isArray(c) ? c.flatMap(positions) : [];
 
-/** Color and hover lines by area code. The first row of a code wins. */
-export const areaRows = (rows: Rows, layer: MapLayer & { area: AreaLevel; code: string }): Map<string, { color: string; hover: string }> => {
-  const { colors } = colorScale(rows, layer.color);
+type Bbox = [number, number, number, number];
+
+/** The key of a code in the bbox index. Small areas are indexed by their city. */
+const bboxKey = (area: AreaLevel, code: string): string => (area === "small_area" ? code.slice(0, 5) : code);
+
+/** Whether the boundary tiles have the code, judged by the bbox index. Without an index every code counts. */
+const knownCode = (area: AreaLevel, code: string, index: Record<string, Bbox> | null): boolean =>
+  index === null || ((area !== "small_area" || code.length === 9 || code.length === 11) && Object.hasOwn(index, bboxKey(area, code)));
+
+/**
+ * Color and hover lines by area code. The first row of a code wins. Codes that the bbox `index` does not have
+ * are left out, and do not count toward the color range.
+ */
+export const areaRows = (
+  rows: Rows,
+  layer: MapLayer & { area: AreaLevel; code: string },
+  index: Record<string, Bbox> | null = null,
+): Map<string, { color: string; hover: string }> => {
+  const codes = rows.map((r) => areaCode(layer.area, r[layer.code]));
+  const known = rows.map((r) => isPlaced(layer, r, index));
+  const { colors } = colorScale(rows, layer.color, (i) => known[i]);
   const out = new Map<string, { color: string; hover: string }>();
   rows.forEach((r, i) => {
-    const code = areaCode(layer.area, r[layer.code]);
-    if (code !== null && !out.has(code)) out.set(code, { color: colors[i], hover: hoverLines(r, layer).join("\n") });
+    const code = codes[i];
+    if (code !== null && known[i] && !out.has(code)) out.set(code, { color: colors[i], hover: hoverLines(r, layer).join("\n") });
   });
   return out;
 };
 
-type Bbox = [number, number, number, number];
+/**
+ * Thrown by renderMap when there are rows but none of them can be put on the map, such as area codes that
+ * match no boundary or rows without a position. The message names the columns, so the SQL can be fixed.
+ */
+export class MapPlacementError extends Error {
+  override name = "MapPlacementError";
+}
 
 const union = (boxes: Bbox[]): Bbox | null =>
   boxes.length === 0
@@ -216,7 +264,7 @@ export const boundsOf = (layer: MapLayer, rows: Rows, codes: string[], index: Re
   if ("geometry" in layer) return union(rows.flatMap((r) => geometriesOf(r[layer.geometry]).flatMap((g) => positions(g.coordinates))).map(pointBox));
   if (index === null) return null;
   return union(codes.flatMap((c): Bbox[] => {
-    const box = index[layer.area === "small_area" ? c.slice(0, 5) : c];
+    const box = index[bboxKey(layer.area, c)];
     return box ? [box] : [];
   }));
 };
@@ -252,6 +300,18 @@ export const loadMaplibre = async (): Promise<Maplibre> => {
   return typeof m.Map === "function" ? m : (m.default ?? m);
 };
 
+/** Whether a row can be put on the map: it has a position, a geometry, or an area code the boundary tiles have. */
+const isPlaced = (layer: MapLayer, row: Record<string, unknown>, index: Record<string, Bbox> | null): boolean => {
+  if ("lng" in layer) return positionOf(row, layer) !== null;
+  if ("geometry" in layer) return geometriesOf(row[layer.geometry]).length > 0;
+  const code = areaCode(layer.area, row[layer.code]);
+  return code !== null && knownCode(layer.area, code, index);
+};
+
+/** The legend of the rows that are placed on the map. */
+export const legendOf = (layer: MapLayer, rows: Rows, index: Record<string, Bbox> | null): Legend | null =>
+  colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], index)).legend;
+
 /**
  * The id of the layer that draws the rows. Listen to it for clicks: `map.on("click", ROWS_LAYER, ...)`.
  * Geometries add `${ROWS_LAYER}-line` and `${ROWS_LAYER}-point`. A feature's `code` property is its area code;
@@ -264,22 +324,29 @@ export type MapRenderOptions = {
   style?: StyleSpecification | string;
   /** Queria's light or dark style. By default, dark when the element's text color is light. */
   theme?: keyof typeof MAP_STYLES;
+  /**
+   * Zoom with Ctrl (⌘ on a Mac) and the wheel, and pan with two fingers, so that the page scrolls past the map.
+   * Off by default.
+   */
+  cooperativeGestures?: boolean;
 };
 
 /**
  * Draw rows on a MapLibre map. maplibre-gl and its stylesheet are loaded on first use.
  * The map is fitted to the rows. Sources and licenses are not drawn here; the elements and React components add them.
+ * Throws a MapPlacementError when there are rows but none can be placed.
  */
 export const renderMap = async (
   el: HTMLElement,
   layer: MapLayer,
   rows: Rows,
-  { style, theme }: MapRenderOptions = {},
+  { style, theme, cooperativeGestures = false }: MapRenderOptions = {},
 ): Promise<{ map: MapLibreMap; finalize: () => void }> => {
   const maplibregl = await loadMaplibre();
   linkCss(maplibregl.getVersion());
   const tone = theme ?? toneOf(getComputedStyle(el).color);
-  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[tone], center: [137, 37], zoom: 4 });
+  const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[tone], center: [137, 37], zoom: 4, cooperativeGestures });
+  let legend: Legend | null;
   try {
     // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to
     // load, leave it drawing, and MapLibre logs them once no listener is left.
@@ -292,11 +359,16 @@ export const renderMap = async (
     // Areas go under the first label of the base map, so place names stay readable; points go on top.
     const below = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
     const opacity = layer.opacity ?? ("lng" in layer ? 0.9 : 0.6);
+    const index = "area" in layer ? await styleBboxIndex(map) : null;
     let codes: string[] = [];
     let hover: (f: { properties: Record<string, unknown> }) => string | undefined;
     const hoverLayers = [ROWS_LAYER];
+    const unplaced = (data: GeoJSON.FeatureCollection, what: string): GeoJSON.FeatureCollection => {
+      if (rows.length > 0 && data.features.length === 0) throw new MapPlacementError(`No row has ${what}`);
+      return data;
+    };
     if ("geometry" in layer) {
-      map.addSource(ROWS_LAYER, { type: "geojson", data: geometryFeatures(rows, layer) });
+      map.addSource(ROWS_LAYER, { type: "geojson", data: unplaced(geometryFeatures(rows, layer), `a GeoJSON geometry in the column "${layer.geometry}"`) });
       map.addLayer({
         id: ROWS_LAYER,
         type: "fill",
@@ -315,7 +387,7 @@ export const renderMap = async (
       hoverLayers.push(`${ROWS_LAYER}-line`, `${ROWS_LAYER}-point`);
       hover = (f) => f.properties.hover as string | undefined;
     } else if ("lng" in layer) {
-      map.addSource(ROWS_LAYER, { type: "geojson", data: pointFeatures(rows, layer) });
+      map.addSource(ROWS_LAYER, { type: "geojson", data: unplaced(pointFeatures(rows, layer), `numbers in both "${layer.lng}" and "${layer.lat}"`) });
       map.addLayer({
         id: ROWS_LAYER,
         type: "circle",
@@ -326,8 +398,9 @@ export const renderMap = async (
     } else {
       const source = boundarySource(layer.area);
       if (!map.getSource(source)) throw new Error(`The map style has no source "${source}". Use Queria's style to draw areas`);
-      const areas = areaRows(rows, layer);
+      const areas = areaRows(rows, layer, index);
       codes = [...areas.keys()];
+      if (rows.length > 0 && codes.length === 0) throw new MapPlacementError(`No value of "${layer.code}" matched a ${layer.area} code`);
       if (codes.length > 0)
         map.addLayer({
           id: ROWS_LAYER,
@@ -363,14 +436,14 @@ export const renderMap = async (
       map.on("click", id, show);
       map.on("mouseleave", id, () => popup.remove());
     });
-    const bounds = boundsOf(layer, rows, codes, "area" in layer ? await styleBboxIndex(map) : null);
+    const bounds = boundsOf(layer, rows, codes, index);
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
+    legend = legendOf(layer, rows, index);
   } catch (e) {
     map.remove();
     throw e;
   }
-  const { legend } = colorScale(rows, layer.color);
-  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, tone)) : null;
+  const legendEl = legend && layer.legend !== false ? el.appendChild(legendElement(legend, tone, layer.name)) : null;
   return {
     map,
     finalize: () => {

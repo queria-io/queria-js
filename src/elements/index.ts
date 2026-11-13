@@ -112,11 +112,16 @@ export class QueriaChart extends dataElement("spec", ["theme", "highlight", "ann
  * <queria-map datasets="queria/e_stat" sql="..." layer='{"area": "city", "code": "lg_code", "color": "population"}'>
  * Runs the SQL and puts the rows on a map by area code or by lng/lat, followed by the sources of the datasets.
  * `rows`, `api-url` work as on <queria-chart>. `theme` works as on <queria-chart>; `map-style` takes another MapLibre style URL.
+ * `cooperative-gestures` keeps the wheel and one finger for scrolling the page.
  * The map height is the CSS variable --queria-map-height (400px by default).
  */
-export class QueriaMap extends dataElement("layer", ["theme", "map-style"], '<div style="height:var(--queria-map-height,400px)"></div>', (box, rows, attr) => {
+export class QueriaMap extends dataElement("layer", ["theme", "map-style", "cooperative-gestures"], '<div style="height:var(--queria-map-height,400px)"></div>', (box, rows, attr) => {
   const style = attr("map-style");
-  return renderMap(box, JSON.parse(attr("layer") ?? "{}"), rows, { theme: themeOf(attr("theme")), ...(style ? { style } : {}) });
+  return renderMap(box, JSON.parse(attr("layer") ?? "{}"), rows, {
+    theme: themeOf(attr("theme")),
+    cooperativeGestures: attr("cooperative-gestures") !== null,
+    ...(style ? { style } : {}),
+  });
 }) {}
 
 /**

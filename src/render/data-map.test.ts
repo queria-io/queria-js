@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaCode, areaRows, boundsOf, colorScale, geometriesOf, geometryFeatures, pointFeatures } from "./data-map.js";
+import { areaCode, areaRows, boundsOf, colorScale, geometriesOf, geometryFeatures, legendOf, pointFeatures } from "./data-map.js";
 
 describe("areaCode", () => {
   it("restores leading zeros and drops the check digit", () => {
@@ -23,6 +23,17 @@ describe("colorScale", () => {
     expect(legend).toEqual({ column: "v", items: [{ label: "x", color: colors[0] }, { label: "y", color: colors[1] }], more: 0 });
     expect(colorScale(Array.from({ length: 12 }, (_, v) => ({ v: `c${v}` })), "v").legend).toMatchObject({ more: 5 });
   });
+  it("uses a log scale when a few values are far larger, and puts the middle value in the legend", () => {
+    const { colors, legend } = colorScale([1, 2, 3, 10, 100].map((v) => ({ v })), "v");
+    expect(legend).toEqual({ column: "v", min: 1, max: 100, mid: 10 });
+    expect(colors[3]).toBe("#977dbe");
+    expect(colorScale([{ v: 1 }, { v: 5 }, { v: 9 }], "v").legend).not.toHaveProperty("mid");
+  });
+  it("takes the range from the placed rows only", () => {
+    const { colors, legend } = colorScale([{ v: 1 }, { v: 2 }, { v: 1000 }], "v", (i) => i < 2);
+    expect(legend).toEqual({ column: "v", min: 1, max: 2 });
+    expect(colors[1]).toBe("#542e8c");
+  });
   it("uses one color without a column", () => {
     const { colors, legend } = colorScale([{}, {}], undefined);
     expect(new Set(colors).size).toBe(1);
@@ -42,6 +53,20 @@ describe("areaRows", () => {
     const areas = areaRows([{ c: 13101, p: 1 }, { c: "131016", p: 2 }], { area: "city", code: "c", color: "p" });
     expect([...areas.keys()]).toEqual(["13101"]);
     expect(areas.get("13101")?.hover).toBe("p: 1");
+  });
+});
+
+describe("areaRows with an index", () => {
+  it("leaves out codes the boundary tiles do not have", () => {
+    const index = { "13101": [139, 35, 140, 36] as [number, number, number, number] };
+    const rows = [{ c: "13101", p: 1 }, { c: "00000", p: 999 }, { c: "13102", p: 2 }];
+    expect([...areaRows(rows, { area: "city", code: "c", color: "p" }, index).keys()]).toEqual(["13101"]);
+    expect(legendOf({ area: "city", code: "c", color: "p" }, rows, index)).toEqual({ column: "p", min: 1, max: 1 });
+  });
+  it("checks the length of small area codes", () => {
+    const index = { "13101": [139, 35, 140, 36] as [number, number, number, number] };
+    expect(areaRows([{ c: "1310100" }], { area: "small_area", code: "c" }, index).size).toBe(0);
+    expect(areaRows([{ c: "131010001" }], { area: "small_area", code: "c" }, index).size).toBe(1);
   });
 });
 

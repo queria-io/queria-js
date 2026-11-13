@@ -9,6 +9,7 @@ export { renderTable, type TableOptions } from "./table.js";
 export {
   areaCode,
   MAP_STYLES,
+  MapPlacementError,
   renderMap,
   ROWS_LAYER,
   type AreaLevel,
