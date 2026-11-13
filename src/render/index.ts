@@ -1,5 +1,6 @@
 export { attributionHtml } from "./attribution.js";
 export { type Annotation } from "./annotate.js";
+export { chartPng, chartSvg, type ChartImageOptions } from "./export.js";
 export { chartTheme, preloadChart, renderChart, toneOf, withData, type Tone, type ChartOptions, type ChartSpec, type Rows } from "./chart.js";
 export { mountMap, type MapHandle } from "./map.js";
 export { poweredByHtml } from "./poweredBy.js";

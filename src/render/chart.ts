@@ -11,7 +11,17 @@ export type Rows = readonly Record<string, unknown>[];
 // Vega writes an id into every row it reads, so hand it copies: the caller's rows may be frozen or shared.
 const copy = (rows: Rows): Record<string, unknown>[] => rows.map((r) => ({ ...r }));
 
-const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
+export const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
+
+/**
+ * Whether the spec lays out several views: concatenated, repeated, or split into panels by a facet operator or by a
+ * row, column or facet encoding. Vega-Lite sizes each view of these by itself, so width "container" and autosize fit do not apply.
+ */
+export const isComposite = (spec: ChartSpec): boolean => {
+  if (["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec)) return true;
+  const encoding: unknown = "encoding" in spec ? spec.encoding : undefined;
+  return typeof encoding === "object" && encoding !== null && ["row", "column", "facet"].some((k) => k in encoding);
+};
 
 const ownDatasets = (spec: ChartSpec): object => {
   const d: unknown = "datasets" in spec ? spec.datasets : undefined;
@@ -26,9 +36,8 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   const named = isRows(data) ? { "": data } : data;
   const { "": main, ...rest } = named;
   // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
-  const composite = ["facet", "repeat", "concat", "hconcat", "vconcat"].some((k) => k in spec);
   return {
-    ...(composite ? {} : { width: "container" }),
+    ...(isComposite(spec) ? {} : { width: "container" }),
     ...spec,
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
     // The spec's own datasets stay; named rows are laid over them.
@@ -41,7 +50,7 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
 export type Tone = "light" | "dark";
 
 // base is the color of a single series; accent, the Queria purple, is kept for what the chart highlights.
-const TONES = {
+export const TONES = {
   light: { fg: "#18181b", muted: "#6b6b76", border: "#e4e4e8", base: "#a1a1aa", accent: "#7846be" },
   dark: { fg: "#f4f4f5", muted: "#a1a1aa", border: "#2c2c31", base: "#71717a", accent: "#a985e6" },
 } as const;
@@ -49,13 +58,13 @@ const TONES = {
 /** Colors of several series. The purple is left out, so it always means "highlighted". */
 
 /**
- * Axis labels for numbers: 万 and 億 on Japanese pages, k / M / G elsewhere. Small numbers are written in full.
+ * Axis labels for numbers: 万 and 億 on Japanese pages, k / M / G elsewhere. Numbers under 10,000 are written in full without separators, so years read as years.
  * An expression, so the chart keeps no function of its own.
  */
 export const numberLabel = (japanese: boolean): string =>
   japanese
-    ? "abs(datum.value) >= 1e8 ? format(datum.value / 1e8, ',.4~r') + '億' : abs(datum.value) >= 1e4 ? format(datum.value / 1e4, ',.4~r') + '万' : format(datum.value, ',.4~r')"
-    : "abs(datum.value) >= 1e4 ? format(datum.value, '.3~s') : format(datum.value, ',.4~r')";
+    ? "abs(datum.value) >= 1e8 ? format(datum.value / 1e8, ',.4~r') + '億' : abs(datum.value) >= 1e4 ? format(datum.value / 1e4, ',.4~r') + '万' : format(datum.value, '.4~r')"
+    : "abs(datum.value) >= 1e4 ? format(datum.value, '.3~s') : format(datum.value, '.4~r')";
 
 /**
  * Queria's look: gray marks, the Queria purple only for highlighted values, rounded bars, a legend above the chart,
