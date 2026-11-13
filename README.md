@@ -75,6 +75,16 @@ To read datasets that are not public, pass a data token (`qd_...`) or a function
 
 Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
 
+## Numbers
+
+```html
+<queria-kpi datasets="queria/e_stat" value="population" label="人口" unit="人"
+  sql="SELECT year, any_value(value) AS population FROM e_stat.ssds.a_municipal_population
+       WHERE area = '13224' AND cat01 = 'A1101' GROUP BY year ORDER BY year"></queria-kpi>
+```
+
+Shows the `value` column of the last row large, with its change from the row before it ("前年比 +0.9% (+1.3万人)"). To compare with another column of the last row, name it in `compare`. Numbers from 10,000 are written with 万 and 億 on Japanese pages and K, M, B elsewhere; `compact="false"` writes them in full. With `unit="%"`, the change is in points. `compare-label` replaces "前年比". In React, `<Kpi sql={sql} value="population" />`; in JavaScript, `renderKpi(el, rows, { value })`.
+
 ## Maps
 
 ```html
@@ -82,7 +92,7 @@ Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in J
   layer='{"area": "city", "code": "lg_code", "color": "population", "label": "lg_code"}'></queria-map>
 ```
 
-`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column) or by position (`lng` and `lat` columns). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`. The package links maplibre-gl's CSS unless the page already does. The map height is the CSS variable `--queria-map-height` (400px by default).
+`layer` puts rows on the map by area code (`area` is `prefecture`, `city` or `small_area`, `code` is the column), by position (`lng` and `lat` columns) or by GeoJSON geometries (`geometry` is a column of GeoJSON text or objects, such as `ST_AsGeoJSON(geom)`). `color` colors by a column: numbers from light to dark, other values one color each, with a legend (`"legend": false` hides it). `label` names a row on hover or tap. In React, use `<DataMap sql={sql} layer={layer} />`; in JavaScript, `renderMap(el, layer, rows)`, which returns the MapLibre map: listen to the layer `ROWS_LAYER` for clicks on the rows (a feature has the area `code`, or the `row` index for geometries). The package links maplibre-gl's CSS unless the page already has it. The map height is the CSS variable `--queria-map-height` (400px by default).
 
 With a bundler, maps need `maplibre-gl`; install it only when you use maps. Charts need nothing more: their code is loaded on first use.
 
