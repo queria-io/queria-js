@@ -23,7 +23,7 @@ export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: 
    * numbers written as text) run on a scale that suits their spread, and other values get one color each.
    */
   scale?: "category" | "linear" | "log";
-  /** The ramp for numbers. A layer without `color` takes its dark end. By default Queria purple. */
+  /** The ramp for numbers. A layer without `color` takes its dark end. By default yellow to green to blue. */
   palette?: Palette;
   /** More columns shown on hover, one line each. */
   popup?: string[];
@@ -53,7 +53,6 @@ export const areaCode = (area: AreaLevel, value: unknown): string | null => {
 
 const hex = (rgb: readonly number[]): string => `#${rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`;
 const rgb = (color: string): number[] => [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-const DEFAULT_RAMP = RAMP.map(hex);
 
 /** The color at t (0 to 1) along the stops. */
 const mix = (stops: readonly string[], t: number): string => {
@@ -136,7 +135,7 @@ export const colorScale = (
   rows: Rows,
   column: string | undefined,
   placed: (i: number) => boolean = () => true,
-  { scale, ramp = DEFAULT_RAMP, fixed = LAYER_COLORS[0], locale }: ColorOptions = {},
+  { scale, ramp = RAMP, fixed = LAYER_COLORS[0], locale }: ColorOptions = {},
 ): { colors: string[]; positions: number[] | null; legend: Legend | null } => {
   if (column === undefined) return { colors: rows.map(() => fixed), positions: null, legend: null };
   const values = rows.map((r) => r[column]);
@@ -350,7 +349,7 @@ type LayerContext = { index?: number; locale?: string; bbox?: Record<string, Bbo
 
 /** The colors, ramp positions and legend of a layer's rows. */
 const layerColors = (layer: MapLayer, rows: Rows, { index = 0, locale, bbox = null }: LayerContext) => {
-  const ramp = layer.palette ? PALETTES[layer.palette] : layerKind(layer, rows) === "line" ? LINE_RAMP : DEFAULT_RAMP;
+  const ramp = layer.palette ? PALETTES[layer.palette] : layerKind(layer, rows) === "line" ? LINE_RAMP : RAMP;
   const fixed = layer.palette ? PALETTES[layer.palette][1] : LAYER_COLORS[index % LAYER_COLORS.length];
   return { fixed, ...colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], bbox), { scale: layer.scale, ramp, fixed, locale }) };
 };
