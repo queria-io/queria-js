@@ -26,6 +26,19 @@ describe("chartSvg", () => {
     for (const svg of [column, wrapped, rowOnly]) expect(size(svg)?.[0]).toBeCloseTo(600, -1);
   });
 
+  it("leaves room for a legend beside the panels", async () => {
+    const many = ["p", "q", "r", "s"].flatMap((g) => rows.map((r) => ({ ...r, g })));
+    const color = { field: "g", legend: { orient: "right" } };
+    const svg = await chartSvg({ ...spec, encoding: { ...spec.encoding, color, column: { field: "g" } } }, many, { width: 600 });
+    expect(size(svg)?.[0]).toBeCloseTo(600, -1);
+  });
+
+  it("keeps panels with many categories on the x axis wide enough for each", async () => {
+    const many = ["p", "q", "r"].flatMap((g) => Array.from({ length: 47 }, (_, i) => ({ name: `n${i}`, v: i, g })));
+    const svg = await chartSvg({ ...spec, encoding: { ...spec.encoding, column: { field: "g" } } }, many, { width: 600 });
+    expect(size(svg)?.[0]).toBeGreaterThan(3 * 47 * 12);
+  });
+
   it("keeps the panel width the spec sets", async () => {
     const svg = await chartSvg({ ...spec, width: 50, encoding: { ...spec.encoding, row: { field: "name" } } }, rows, { width: 600 });
     expect(size(svg)?.[0]).toBeLessThan(200);

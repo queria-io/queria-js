@@ -1,5 +1,5 @@
 import type { Dataset } from "../client.js";
-import { chartTheme, fitPanels, fitsPanels, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { chartTheme, fitPanels, fitsPanels, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, withPanelWidth, type ChartSpec, type Rows, type Tone } from "./chart.js";
 import { withAnnotations, type Annotation } from "./annotate.js";
 import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
@@ -76,7 +76,7 @@ export const chartSvg = async (
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const footer = sources.length > 0 ? FOOTER : 0;
   const full = {
-    ...withData(noted.spec, data),
+    ...withData(fitsPanels(spec) ? withPanelWidth(noted.spec) : noted.spec, data),
     ...(isComposite(spec) ? {} : { width, height: height - footer, autosize: { type: "fit", contains: "padding" } }),
     padding: PADDING,
   };

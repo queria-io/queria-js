@@ -13,10 +13,13 @@ const copy = (rows: Rows): Record<string, unknown>[] => rows.map((r) => ({ ...r 
 
 export const isRows = (d: Rows | Readonly<Record<string, Rows>>): d is Rows => Array.isArray(d);
 
-/** Whether the spec is split into panels by a facet operator or by a row, column or facet encoding. */
+/**
+ * Whether the spec is split into panels by a facet operator or by a row, column or facet encoding. Vega-Lite drops
+ * those encodings from a layer's shared encoding, so only a single view with a mark is split by them.
+ */
 const isFaceted = (spec: ChartSpec): boolean => {
   if ("facet" in spec) return true;
-  const encoding: unknown = "encoding" in spec ? spec.encoding : undefined;
+  const encoding: unknown = "encoding" in spec && "mark" in spec ? spec.encoding : undefined;
   return typeof encoding === "object" && encoding !== null && ["row", "column", "facet"].some((k) => k in encoding);
 };
 
@@ -39,29 +42,41 @@ export const fitsPanels = (spec: ChartSpec): boolean => {
 
 // The width the panels start with, before fitPanels has measured the chart.
 const START_WIDTH = 100;
-// Narrower panels are not drawn: the chart is left wider than its container instead.
+// Narrower panels are not drawn: the chart is left wider than its container instead. A panel with categories on
+// its x axis is kept at MIN_STEP or more for each, so that the bars and labels do not shrink to slivers.
 const MIN_PANEL = 80;
+const MIN_STEP = 12;
 
-const withPanelWidth = (spec: ChartSpec): ChartSpec =>
+/** The spec with a width for its panels to start from, which fitPanels changes. For specs where fitsPanels is true. */
+export const withPanelWidth = (spec: ChartSpec): ChartSpec =>
   "facet" in spec && "spec" in spec && typeof spec.spec === "object" && spec.spec !== null
     ? { ...spec, spec: { width: START_WIDTH, ...spec.spec } }
     : { width: START_WIDTH, ...spec };
 
 type Scene = { name?: string; role?: string; x?: number; items?: Scene[]; bounds?: { x1: number; x2: number } };
 
-// Legends and the chart title are left out: they are as wide as their text, whatever the width of the panels.
+// Legends and the chart title are as wide as their text, whatever the width of the panels.
 const SIDE = new Set(["legend", "title"]);
+
+const spanOf = (marks: readonly Scene[]): { x1: number; x2: number } | undefined => {
+  const spans = marks.flatMap((m) => (m.bounds ? [m.bounds] : []));
+  return spans.length ? { x1: Math.min(...spans.map((b) => b.x1)), x2: Math.max(...spans.map((b) => b.x2)) } : undefined;
+};
 
 /**
  * The width of each panel so that the panels, their headers and axes take `width` in all, from the chart as drawn with
- * `panel` as the panel width. The panels in a row are the cells with different x.
+ * `panel` as the panel width. The panels in a row are the cells with different x. A legend beside the panels takes its
+ * own width out of `width`; one above or below them, and the title, are left out.
  */
-export const panelWidth = (root: Scene, panel: number, width: number): number => {
-  const marks = (root.items?.[0]?.items ?? []).filter((m) => !SIDE.has(m.role ?? ""));
+export const panelWidth = (root: Scene, panel: number, width: number, least = MIN_PANEL): number => {
+  const all = root.items?.[0]?.items ?? [];
+  const marks = all.filter((m) => !SIDE.has(m.role ?? ""));
   const columns = new Set((marks.find((m) => m.name === "cell")?.items ?? []).map((c) => c.x)).size || 1;
-  const spans = marks.flatMap((m) => (m.bounds ? [m.bounds] : []));
-  const drawn = spans.length ? Math.max(...spans.map((b) => b.x2)) - Math.min(...spans.map((b) => b.x1)) : 0;
-  return Math.max(Math.floor((width - (drawn - columns * panel)) / columns), MIN_PANEL);
+  const panels = spanOf(marks);
+  const beside = panels ? all.filter((m) => m.role === "legend" && m.bounds && (m.bounds.x1 >= panels.x2 || m.bounds.x2 <= panels.x1)) : [];
+  const span = spanOf([...marks, ...beside]);
+  const drawn = span ? span.x2 - span.x1 : 0;
+  return Math.max(Math.floor((width - (drawn - columns * panel)) / columns), least);
 };
 
 const isScene = (x: unknown): x is Scene => typeof x === "object" && x !== null;
@@ -76,9 +91,23 @@ const rootOf = (view: Result["view"]): Scene => {
  * Size the panels of a chart drawn from a spec for which fitsPanels is true, so that the chart is `width` wide.
  * The second pass corrects for axis labels that change with the panel width.
  */
+// The least width of a panel: MIN_STEP for each category on a shared x axis of categories, at least MIN_PANEL.
+const leastPanel = (view: Result["view"]): number => {
+  // Panels with x scales of their own have no scale named x.
+  const x: unknown = (() => {
+    try {
+      return view.scale("x");
+    } catch {
+      return undefined;
+    }
+  })();
+  const domain: unknown = typeof x === "function" && "bandwidth" in x && "domain" in x && typeof x.domain === "function" ? x.domain() : [];
+  return Math.max(MIN_PANEL, (Array.isArray(domain) ? domain.length : 0) * MIN_STEP);
+};
+
 export const fitPanels = async (view: Result["view"], width: number, passes = 2): Promise<void> => {
   const panel = Number(view.signal("child_width"));
-  const next = panelWidth(rootOf(view), panel, width);
+  const next = panelWidth(rootOf(view), panel, width, leastPanel(view));
   if (passes === 0 || Math.abs(next - panel) < 1) return;
   await view.signal("child_width", next).resize().runAsync();
   return fitPanels(view, width, passes - 1);
@@ -104,7 +133,7 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
   return {
     ...(isComposite(spec) ? {} : { width: "container" }),
-    ...(fitsPanels(spec) ? withPanelWidth(spec) : spec),
+    ...spec,
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
     // The spec's own datasets stay; named rows are laid over them.
     ...(Object.keys(rest).length
@@ -318,7 +347,7 @@ export const renderChart = async (
   const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
   const { fg, muted } = TONES[tone];
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
-  const { view, finalize } = await embed(el, withData(noted.spec, data) as VisualizationSpec, {
+  const { view, finalize } = await embed(el, withData(fitsPanels(spec) ? withPanelWidth(noted.spec) : noted.spec, data) as VisualizationSpec, {
     // Read the spec as Vega-Lite even when its $schema says Vega
     mode: "vega-lite",
     ast: true,
@@ -333,12 +362,20 @@ export const renderChart = async (
   const result = { view, highlighted: shown !== spec, annotated: noted.added };
   if (!fitsPanels(spec)) return { ...result, finalize };
   // Panels are sized to the element as width "container" sizes a single view, again when the element is resized.
-  const fit = (): Promise<void> => {
+  const measure = (): Promise<void> => {
     const { paddingLeft, paddingRight } = getComputedStyle(el);
     const width = el.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight);
     return width > 0 ? fitPanels(view, width - padX(view)) : Promise.resolve();
   };
-  await fit();
+  // One fit at a time: a fit reads the chart as the one before it left it.
+  let fitting = Promise.resolve();
+  const fit = (): Promise<void> => (fitting = fitting.then(measure, measure));
+  try {
+    await fit();
+  } catch (e) {
+    finalize();
+    throw e;
+  }
   // A resize that comes while the chart is being removed has nothing left to size.
   const observer = new ResizeObserver(() => {
     fit().catch(() => undefined);
