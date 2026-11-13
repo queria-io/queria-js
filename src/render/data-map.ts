@@ -688,6 +688,43 @@ export type MapRenderOptions = {
   locale?: string;
 };
 
+/** How long the attribution shows in full, counted from the map's load, before folding into its button. */
+const ATTRIBUTION_SHOWN_MS = 5000;
+
+/**
+ * Fold the compact attribution once, ATTRIBUTION_SHOWN_MS after the map loads or on the first move or click,
+ * whichever comes first. The countdown starts at load, when the sources have brought their attribution.
+ */
+const foldAttribution = (map: MapLibreMap, el: HTMLElement) => {
+  const control = el.querySelector(".maplibregl-ctrl-attrib.maplibregl-compact");
+  if (!control) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const start = () => {
+    timer = setTimeout(fold, ATTRIBUTION_SHOWN_MS);
+  };
+  // fitBounds and the small-area refit move the camera too. Only a move the user made folds it.
+  const onMove = (e: { originalEvent?: unknown }) => {
+    if (e.originalEvent) fold();
+  };
+  const stop = () => {
+    clearTimeout(timer);
+    map.off("load", start);
+    map.off("movestart", onMove);
+    map.off("click", fold);
+    control.removeEventListener("click", stop);
+  };
+  const fold = () => {
+    stop();
+    control.classList.remove("maplibregl-compact-show");
+  };
+  map.once("load", start);
+  map.on("movestart", onMove);
+  map.on("click", fold);
+  // Once the user opens or closes it with its button, it stays as they set it.
+  control.addEventListener("click", stop);
+  map.once("remove", stop);
+};
+
 /**
  * Draw rows on a MapLibre map. maplibre-gl and its stylesheet are loaded on first use.
  * The map is fitted to the rows. It returns once the rows are added, before the base map's tiles have loaded.
@@ -703,7 +740,11 @@ export const renderMap = async (
   const maplibregl = await loadMaplibre();
   linkCss(maplibregl.getVersion());
   const tone = theme ?? toneOf(getComputedStyle(el).color);
+  // MapLibre's default attribution is compact, with the MapLibre link. It shows in full first, then folds into
+  // its (i) button after ATTRIBUTION_SHOWN_MS or once the map is moved or clicked, as the OpenStreetMap
+  // attribution guidelines allow. The button opens it again at any time.
   const map = new maplibregl.Map({ container: el, style: style ?? MAP_STYLES[tone], center: [137, 37], zoom: 4, cooperativeGestures });
+  foldAttribution(map, el);
   let added: AddedMapLayer | undefined;
   try {
     // An error before the style loads stops the map. Later errors, such as a tile or a sprite that fails to
