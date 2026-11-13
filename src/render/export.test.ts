@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chartSvg } from "./export.js";
+import { chartSvg, imageName } from "./export.js";
 
 const spec = { mark: "bar", encoding: { x: { field: "name", type: "nominal" }, y: { field: "v", type: "quantitative" } } };
 const rows = [{ name: "a", v: 1 }, { name: "b", v: 2 }];
@@ -54,5 +54,13 @@ describe("number labels", () => {
     expect(svg).toContain(">2000<");
     expect(svg).not.toContain("2,000");
     expect(svg).toContain("万<");
+  });
+});
+
+describe("imageName", () => {
+  it("names the file after the chart's title", () => {
+    expect(imageName({ ...spec, title: "人口 / 世帯" })).toBe("人口_世帯.png");
+    expect(imageName({ ...spec, title: { text: "人口" } })).toBe("人口.png");
+    expect(imageName(spec)).toBe("chart.png");
   });
 });

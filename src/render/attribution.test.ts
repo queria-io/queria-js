@@ -22,4 +22,9 @@ describe("attributionHtml", () => {
     expect(attributionHtml([])).not.toContain("Source");
     expect(attributionHtml([])).toContain('aria-label="Queria"');
   });
+
+  it("shows the save image button only when asked", () => {
+    expect(attributionHtml([])).not.toContain("queria-save-image");
+    expect(attributionHtml([], undefined, { saveImage: true })).toContain('class="queria-save-image"');
+  });
 });

@@ -1,7 +1,9 @@
 import { connect, parseDatasets } from "../client.js";
-import { attributionHtml } from "../render/attribution.js";
+import { attributionHtml, SAVE_IMAGE_CLASS } from "../render/attribution.js";
 import type { Annotation } from "../render/annotate.js";
 import { renderChart } from "../render/chart.js";
+import { imageOptionsOf, saveChartPng } from "../render/export.js";
+import type { Dataset } from "../client.js";
 import { renderMap } from "../render/data-map.js";
 import { esc } from "../render/escape.js";
 import { renderKpi } from "../render/kpi.js";
@@ -24,16 +26,28 @@ const note = (text: string): string =>
 
 type Draw = (box: HTMLElement, rows: Record<string, unknown>[], attr: (name: string) => string | null) => Promise<{ finalize: () => void }>;
 
+/** Save what was drawn as an image. Elements that have one show a "Save image" button when `save-image` is set. */
+type Save = (box: HTMLElement, rows: Record<string, unknown>[], sources: Dataset[], attr: (name: string) => string | null) => Promise<void>;
+
 /**
  * An element that runs its `sql` (or reads `rows` as JSON), then draws the rows into `box` and shows the sources of
  * `datasets` under it. `need` is the attribute that says how to draw, if any; nothing is drawn without it.
  */
-const dataElement = (need: string | null, extra: readonly string[], box: string, draw: Draw) =>
+const dataElement = (need: string | null, extra: readonly string[], box: string, draw: Draw, save?: Save) =>
   class extends HTMLElement {
-    static observedAttributes = ["datasets", "sql", "rows", "api-url", ...(need ? [need] : []), ...extra];
+    static observedAttributes = ["datasets", "sql", "rows", "api-url", ...(need ? [need] : []), ...extra, ...(save ? ["save-image"] : [])];
     #run = 0;
     #pending = false;
     #finalize: (() => void) | null = null;
+    #save: (() => Promise<void>) | null = null;
+
+    constructor() {
+      super();
+      this.addEventListener("click", (e) => {
+        if (!(e.target instanceof Element) || e.target.closest(`.${SAVE_IMAGE_CLASS}`) === null) return;
+        this.#save?.().catch((err: unknown) => console.error("[queria] Save image:", err));
+      });
+    }
 
     connectedCallback() {
       this.#schedule();
@@ -61,6 +75,7 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
     #clear() {
       this.#finalize?.();
       this.#finalize = null;
+      this.#save = null;
     }
 
     async #draw() {
@@ -81,15 +96,31 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
         }
         const url = sql ? await conn.shareUrl(sql, need === "spec" ? JSON.parse(attr("spec") ?? "{}") : undefined) : null;
         if (run !== this.#run) return;
-        this.innerHTML = `${box}${attributionHtml(sources, sql && url ? { sql, url } : undefined)}`;
-        const { finalize } = await draw(this.firstElementChild as HTMLElement, data, attr);
-        if (run === this.#run) this.#finalize = finalize;
-        else finalize();
+        const saveImage = save !== undefined && attr("save-image") !== null;
+        this.innerHTML = `${box}${attributionHtml(sources, sql && url ? { sql, url } : undefined, { saveImage })}`;
+        const el = this.firstElementChild as HTMLElement;
+        const { finalize } = await draw(el, data, attr);
+        if (run !== this.#run) return finalize();
+        this.#finalize = finalize;
+        if (save && saveImage) this.#save = () => save(el, data, sources, attr);
       } catch (e) {
         if (run === this.#run) this.innerHTML = note(e instanceof Error ? e.message : String(e));
       }
     }
   };
+
+/** The chart as a PNG with its sources and the Queria logo, in the colors it is drawn in. */
+const saveChart: Save = (box, rows, sources, attr) =>
+  saveChartPng(
+    JSON.parse(attr("spec") ?? "{}"),
+    rows,
+    imageOptionsOf(box, {
+      theme: themeOf(attr("theme")),
+      highlight: highlightOf(attr("highlight")),
+      annotations: annotationsOf(attr("annotations")),
+      sources,
+    }),
+  );
 
 /**
  * <queria-chart datasets="queria/e_stat" sql="..." spec='{"mark": "line", ...}'>
@@ -99,13 +130,19 @@ const dataElement = (need: string | null, extra: readonly string[], box: string,
  * `api-url` replaces the Queria API, for example with a staging host. `theme` is light or dark; by default the chart
  * is dark when the element's text color is light. `highlight` colors one value (or a JSON array of values) purple.
  * `annotations` adds notes with arrows, as a JSON array of { at, text, dx, dy }.
+ * `save-image` shows a "Save image" button that saves the chart as a 1200 × 630 PNG with the sources and the logo.
  */
-export class QueriaChart extends dataElement("spec", ["theme", "highlight", "annotations"], "<div></div>", (box, rows, attr) =>
-  renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, {
-    theme: themeOf(attr("theme")),
-    highlight: highlightOf(attr("highlight")),
-    annotations: annotationsOf(attr("annotations")),
-  }),
+export class QueriaChart extends dataElement(
+  "spec",
+  ["theme", "highlight", "annotations"],
+  "<div></div>",
+  (box, rows, attr) =>
+    renderChart(box, JSON.parse(attr("spec") ?? "{}"), rows, {
+      theme: themeOf(attr("theme")),
+      highlight: highlightOf(attr("highlight")),
+      annotations: annotationsOf(attr("annotations")),
+    }),
+  saveChart,
 ) {}
 
 /**
