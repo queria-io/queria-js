@@ -183,21 +183,28 @@ export type LegendEntry = { name?: string; kind: LayerKind; color: string; legen
 const swatch = (kind: LayerKind, color: string): HTMLDivElement =>
   div(`flex:none;width:10px;height:${kind === "line" ? 3 : 10}px;border-radius:${kind === "point" ? "50%" : "2px"};background:${color}`);
 
+export type LegendOptions = {
+  /** The language of the numbers. By default the browser's. */
+  locale?: string;
+  /** The corner of the map the legend is drawn in. Top left by default. */
+  corner?: "top-left" | "bottom-left";
+};
+
 /**
- * The legend drawn over the map's top left corner: one section per layer, titled with the layer's name or else the
+ * The legend drawn over a corner of the map: one section per layer, titled with the layer's name or else the
  * column. A layer without a color column shows its color when several layers are drawn. Labels come from the data,
  * so they are set as text. Returns null when there is nothing to show.
  */
 export const legendElement = (
   entries: LegendEntry | LegendEntry[],
   theme: "light" | "dark",
-  locale?: string,
+  { locale, corner = "top-left" }: LegendOptions = {},
 ): HTMLElement | null => {
   const list = Array.isArray(entries) ? entries : [entries];
   const shown = list.filter((e) => e.legend !== null || (list.length > 1 && e.name));
   if (shown.length === 0) return null;
   const box = div(
-    `position:absolute;top:8px;left:8px;z-index:2;max-width:45%;padding:6px 8px;border-radius:4px;font:12px/1.4 sans-serif;display:flex;flex-direction:column;gap:4px;${theme === "dark" ? "background:rgba(23,23,23,.85);color:#e5e5e5" : "background:rgba(255,255,255,.9);color:#262626"}`,
+    `position:absolute;${corner === "top-left" ? "top" : "bottom"}:8px;left:8px;z-index:2;max-width:45%;padding:6px 8px;border-radius:4px;font:12px/1.4 sans-serif;display:flex;flex-direction:column;gap:4px;${theme === "dark" ? "background:rgba(23,23,23,.85);color:#e5e5e5" : "background:rgba(255,255,255,.9);color:#262626"}`,
   );
   box.className = "queria-legend";
   shown.forEach(({ name, kind, color, legend }) => {
@@ -472,8 +479,12 @@ export const loadMaplibre = async (): Promise<Maplibre> => {
  */
 export const ROWS_LAYER = "queria-rows";
 
-/** Rows to add to a map as one layer. `id` names its MapLibre layers, `queria-rows-<n>` by default. */
-export type MapLayerRows = { layer: MapLayer; rows: Rows; id?: string };
+/**
+ * Rows to add to a map as one layer. `id` names its MapLibre layers, `queria-rows-<n>` by default. `index` picks the
+ * color of a layer without a color column, by default its position in the list; pass the position among all the
+ * layers so that hiding one does not change the colors of the others.
+ */
+export type MapLayerRows = { layer: MapLayer; rows: Rows; id?: string; index?: number };
 
 /** A layer added by addMapLayers. `error` says why no row could be placed; such a layer is not drawn. */
 export type AddedMapLayer = LegendEntry & { id: string; error: string | null };
@@ -520,7 +531,7 @@ export const addMapLayers = async (
   const byProperty = (f: { properties: Record<string, unknown> }) => f.properties.hover as string | undefined;
   const layers = entries.map(({ layer, rows, ...entry }, i): AddedMapLayer & { add: () => void } => {
     const id = entry.id ?? `${ROWS_LAYER}-${i}`;
-    const context = { index: i, locale };
+    const context = { index: entry.index ?? i, locale };
     const kind = layerKind(layer, rows);
     const { fixed, legend } = layerColors(layer, rows, { ...context, bbox: index });
     const base = { id, name: layer.name, kind, color: fixed, legend: layer.legend === false ? null : legend };
@@ -680,7 +691,7 @@ export const renderMap = async (
     map.remove();
     throw e;
   }
-  const legendEl = added ? legendElement(added, tone, locale) : null;
+  const legendEl = added ? legendElement(added, tone, { locale }) : null;
   if (legendEl) el.appendChild(legendEl);
   return {
     map,

@@ -20,6 +20,7 @@ export {
   type AreaLevel,
   type Legend,
   type LegendEntry,
+  type LegendOptions,
   type MapLayerRows,
   type MapLayer,
   type MapRenderOptions,
