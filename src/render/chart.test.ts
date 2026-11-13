@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fontOf, toneOf, withData, withHighlight } from "./chart.js";
+import { fitsPanels, fontOf, toneOf, withData, withHighlight } from "./chart.js";
 
 describe("withData", () => {
   it("puts rows into a spec without data", () => {
@@ -19,6 +19,22 @@ describe("withData", () => {
     const out = withData({ hconcat: [] }, rows);
     expect(out).not.toHaveProperty("width");
     expect(Object.isFrozen((out.data as { values: object[] }).values[0])).toBe(false);
+  });
+  it("gives the panels of a facet a width to start from, unless the spec sets one", () => {
+    const panel = { mark: "bar", encoding: { x: { field: "a" } } };
+    expect(withData({ ...panel, encoding: { ...panel.encoding, column: { field: "c" } } }, [])).toMatchObject({ width: 100 });
+    expect(withData({ facet: { field: "c" }, spec: panel }, [])).toMatchObject({ spec: { width: 100 } });
+    expect(withData({ facet: { field: "c" }, spec: { ...panel, width: 50 } }, [])).toMatchObject({ spec: { width: 50 } });
+  });
+});
+
+describe("fitsPanels", () => {
+  it("is true for a facet whose panel has no width", () => {
+    expect(fitsPanels({ mark: "bar", encoding: { row: { field: "c" } } })).toBe(true);
+    expect(fitsPanels({ facet: { row: { field: "c" } }, spec: { mark: "bar" } })).toBe(true);
+    expect(fitsPanels({ facet: { row: { field: "c" } }, spec: { mark: "bar", width: 50 } })).toBe(false);
+    expect(fitsPanels({ hconcat: [] })).toBe(false);
+    expect(fitsPanels({ mark: "bar" })).toBe(false);
   });
 });
 

@@ -18,10 +18,17 @@ describe("chartSvg", () => {
     expect(svg).not.toContain('class="mark-group role-legend"');
   });
 
-  it("leaves panels split by a row encoding at their own size", async () => {
-    const svg = await chartSvg({ ...spec, encoding: { ...spec.encoding, row: { field: "name" } } }, rows, { width: 600, height: 300 });
-    // Asked-for width on each panel would make the image wider than asked (746 px here)
-    expect(size(svg)?.[0]).toBeLessThan(600);
+  it("sizes the panels of a facet to the width of the image", async () => {
+    const many = ["p", "q", "r", "s"].flatMap((g) => rows.map((r) => ({ ...r, g })));
+    const column = await chartSvg({ ...spec, encoding: { ...spec.encoding, column: { field: "g" } } }, many, { width: 600 });
+    const wrapped = await chartSvg({ data: { values: many }, facet: { field: "g" }, columns: 2, spec }, many, { width: 600 });
+    const rowOnly = await chartSvg({ ...spec, encoding: { ...spec.encoding, row: { field: "name" } } }, rows, { width: 600 });
+    for (const svg of [column, wrapped, rowOnly]) expect(size(svg)?.[0]).toBeCloseTo(600, -1);
+  });
+
+  it("keeps the panel width the spec sets", async () => {
+    const svg = await chartSvg({ ...spec, width: 50, encoding: { ...spec.encoding, row: { field: "name" } } }, rows, { width: 600 });
+    expect(size(svg)?.[0]).toBeLessThan(200);
   });
 
   it("draws annotations", async () => {
