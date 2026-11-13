@@ -456,10 +456,17 @@ const styleBboxIndex = async (map: MapLibreMap): Promise<Record<string, Bbox> | 
 
 const pointBox = ([lng, lat]: [number, number]): Bbox => [lng, lat, lng, lat];
 
+/**
+ * The bounds of geometries, such as those of the rows or of the features queryRenderedFeatures returns. Small areas
+ * have no bounds of their own in the bbox index, so the map first fits their city and then their drawn features.
+ */
+export const geometriesBounds = (geometries: { type: string; coordinates?: unknown }[]): Bbox | null =>
+  union(geometries.flatMap((g) => positions(g.coordinates)).map(pointBox));
+
 /** The bounds of the points or geometries, or of the areas from the bbox index (small areas use their city). */
 export const boundsOf = (layer: MapLayer, rows: Rows, codes: string[], index: Record<string, Bbox> | null): Bbox | null => {
   if ("lng" in layer) return union(rows.flatMap((r) => [positionOf(r, layer)].filter((p) => p !== null).map(pointBox)));
-  if ("geometry" in layer) return union(rows.flatMap((r) => rowGeometries(r, layer.geometry).flatMap((g) => positions(g.coordinates))).map(pointBox));
+  if ("geometry" in layer) return geometriesBounds(rows.flatMap((r) => rowGeometries(r, layer.geometry)));
   if (index === null) return null;
   return union(codes.flatMap((c): Bbox[] => {
     const box = index[bboxKey(layer.area, c)];
@@ -713,6 +720,26 @@ export const renderMap = async (
     added = layers[0];
     if (added.error) throw new MapPlacementError(added.error);
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
+    // Small areas are fitted to their city first. Once their shapes are drawn, fit the shapes themselves,
+    // or a trade area of a few hundred meters shows as a speck in a whole city.
+    // Skip it when the camera has moved since, by the user or by the caller, so their view is kept. A resize of
+    // the container fires movestart too but keeps the camera, so it is the camera that is compared.
+    if ("area" in layer && layer.area === "small_area") {
+      // A city wider than the view is fitted below the boundary tiles' minzoom, where no shape is drawn.
+      // Zoom in to it at the city's center so the shapes are drawn and can be fitted.
+      const source = map.getLayer(ROWS_LAYER)?.source;
+      const minzoom = source ? map.getSource(source)?.minzoom : undefined;
+      if (minzoom !== undefined && map.getZoom() < minzoom) map.setZoom(minzoom);
+      const camera = () => JSON.stringify([map.getCenter(), map.getZoom(), map.getBearing(), map.getPitch()]);
+      const fitted = camera();
+      map.once("idle", () => {
+        if (camera() !== fitted) return;
+        const box = geometriesBounds(map.queryRenderedFeatures({ layers: [ROWS_LAYER] }).map((f) => f.geometry));
+        // Keep the shapes clear of the attribution at the bottom
+        const attribution = el.querySelector(".maplibregl-ctrl-bottom-right")?.getBoundingClientRect().height ?? 0;
+        if (box) map.fitBounds(box, { padding: { top: 24, left: 24, right: 24, bottom: 24 + attribution }, maxZoom: 15, duration: 0 });
+      });
+    }
   } catch (e) {
     map.remove();
     throw e;
