@@ -33,21 +33,19 @@ const panelOf = (spec: ChartSpec): unknown => ("facet" in spec && "spec" in spec
 
 /**
  * Whether the panels of the spec are sized to the width they are drawn in: a facet whose panel has no width of its own.
- * Vega-Lite does not size panels to a container, so they are given a width, which fitPanels then changes.
+ * Vega-Lite does not size panels to a container, so they are given a width, which panelFitter then changes.
  */
 export const fitsPanels = (spec: ChartSpec): boolean => {
   const panel = panelOf(spec);
   return isFaceted(spec) && typeof panel === "object" && panel !== null && !("width" in panel);
 };
 
-// The width the panels start with, before fitPanels has measured the chart.
+// The width the panels start with, before panelFitter has measured the chart.
 const START_WIDTH = 100;
-// Narrower panels are not drawn: the chart is left wider than its container instead. A panel with categories on
-// its x axis is kept at MIN_STEP or more for each, so that the bars and labels do not shrink to slivers.
+// Narrower panels are not drawn: the chart is left wider than its container instead.
 const MIN_PANEL = 80;
-const MIN_STEP = 12;
 
-/** The spec with a width for its panels to start from, which fitPanels changes. For specs where fitsPanels is true. */
+/** The spec with a width for its panels to start from. For specs where fitsPanels is true. */
 export const withPanelWidth = (spec: ChartSpec): ChartSpec =>
   "facet" in spec && "spec" in spec && typeof spec.spec === "object" && spec.spec !== null
     ? { ...spec, spec: { width: START_WIDTH, ...spec.spec } }
@@ -55,28 +53,17 @@ export const withPanelWidth = (spec: ChartSpec): ChartSpec =>
 
 type Scene = { name?: string; role?: string; x?: number; items?: Scene[]; bounds?: { x1: number; x2: number } };
 
-// Legends and the chart title are as wide as their text, whatever the width of the panels.
-const SIDE = new Set(["legend", "title"]);
-
-const spanOf = (marks: readonly Scene[]): { x1: number; x2: number } | undefined => {
-  const spans = marks.flatMap((m) => (m.bounds ? [m.bounds] : []));
-  return spans.length ? { x1: Math.min(...spans.map((b) => b.x1)), x2: Math.max(...spans.map((b) => b.x2)) } : undefined;
-};
-
 /**
- * The width of each panel so that the panels, their headers and axes take `width` in all, from the chart as drawn with
- * `panel` as the panel width. The panels in a row are the cells with different x. A legend beside the panels takes its
- * own width out of `width`; one above or below them, and the title, are left out.
+ * The number of panels in a row (cells with different x), and the width of what is beside them (axes, headers, the
+ * space between), from the chart as drawn with `panel` as the panel width. Legends and the title are left out: they are
+ * as wide as their text, whatever the width of the panels.
  */
-export const panelWidth = (root: Scene, panel: number, width: number, least = MIN_PANEL): number => {
-  const all = root.items?.[0]?.items ?? [];
-  const marks = all.filter((m) => !SIDE.has(m.role ?? ""));
+export const panelLayout = (root: Scene, panel: number): { columns: number; others: number } => {
+  const marks = (root.items?.[0]?.items ?? []).filter((m) => m.role !== "legend" && m.role !== "title");
   const columns = new Set((marks.find((m) => m.name === "cell")?.items ?? []).map((c) => c.x)).size || 1;
-  const panels = spanOf(marks);
-  const beside = panels ? all.filter((m) => m.role === "legend" && m.bounds && (m.bounds.x1 >= panels.x2 || m.bounds.x2 <= panels.x1)) : [];
-  const span = spanOf([...marks, ...beside]);
-  const drawn = span ? span.x2 - span.x1 : 0;
-  return Math.max(Math.floor((width - (drawn - columns * panel)) / columns), least);
+  const spans = marks.flatMap((m) => (m.bounds ? [m.bounds] : []));
+  const drawn = spans.length ? Math.max(...spans.map((b) => b.x2)) - Math.min(...spans.map((b) => b.x1)) : 0;
+  return { columns, others: drawn - columns * panel };
 };
 
 const isScene = (x: unknown): x is Scene => typeof x === "object" && x !== null;
@@ -88,29 +75,12 @@ const rootOf = (view: Result["view"]): Scene => {
 };
 
 /**
- * Size the panels of a chart drawn from a spec for which fitsPanels is true, so that the chart is `width` wide.
- * The second pass corrects for axis labels that change with the panel width.
+ * Measure a chart drawn from withPanelWidth once, and return a function that sizes its panels so that the chart is
+ * `width` wide.
  */
-// The least width of a panel: MIN_STEP for each category on a shared x axis of categories, at least MIN_PANEL.
-const leastPanel = (view: Result["view"]): number => {
-  // Panels with x scales of their own have no scale named x.
-  const x: unknown = (() => {
-    try {
-      return view.scale("x");
-    } catch {
-      return undefined;
-    }
-  })();
-  const domain: unknown = typeof x === "function" && "bandwidth" in x && "domain" in x && typeof x.domain === "function" ? x.domain() : [];
-  return Math.max(MIN_PANEL, (Array.isArray(domain) ? domain.length : 0) * MIN_STEP);
-};
-
-export const fitPanels = async (view: Result["view"], width: number, passes = 2): Promise<void> => {
-  const panel = Number(view.signal("child_width"));
-  const next = panelWidth(rootOf(view), panel, width, leastPanel(view));
-  if (passes === 0 || Math.abs(next - panel) < 1) return;
-  await view.signal("child_width", next).resize().runAsync();
-  return fitPanels(view, width, passes - 1);
+export const panelFitter = (view: Result["view"]): ((width: number) => Promise<unknown>) => {
+  const { columns, others } = panelLayout(rootOf(view), Number(view.signal("child_width")));
+  return (width) => view.signal("child_width", Math.max(Math.floor((width - others) / columns), MIN_PANEL)).resize().runAsync();
 };
 
 const padX = (view: Result["view"]): number => {
@@ -362,20 +332,13 @@ export const renderChart = async (
   const result = { view, highlighted: shown !== spec, annotated: noted.added };
   if (!fitsPanels(spec)) return { ...result, finalize };
   // Panels are sized to the element as width "container" sizes a single view, again when the element is resized.
-  const measure = (): Promise<void> => {
+  const fitTo = panelFitter(view);
+  const fit = (): Promise<unknown> => {
     const { paddingLeft, paddingRight } = getComputedStyle(el);
     const width = el.clientWidth - parseFloat(paddingLeft) - parseFloat(paddingRight);
-    return width > 0 ? fitPanels(view, width - padX(view)) : Promise.resolve();
+    return width > 0 ? fitTo(width - padX(view)) : Promise.resolve();
   };
-  // One fit at a time: a fit reads the chart as the one before it left it.
-  let fitting = Promise.resolve();
-  const fit = (): Promise<void> => (fitting = fitting.then(measure, measure));
-  try {
-    await fit();
-  } catch (e) {
-    finalize();
-    throw e;
-  }
+  await fit();
   // A resize that comes while the chart is being removed has nothing left to size.
   const observer = new ResizeObserver(() => {
     fit().catch(() => undefined);
