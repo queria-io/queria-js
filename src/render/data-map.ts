@@ -456,6 +456,13 @@ const styleBboxIndex = async (map: MapLibreMap): Promise<Record<string, Bbox> | 
 
 const pointBox = ([lng, lat]: [number, number]): Bbox => [lng, lat, lng, lat];
 
+/**
+ * The bounds of features drawn on the map, such as those queryRenderedFeatures returns. Small areas have no
+ * bounds of their own in the bbox index, so the map first fits their city and then these.
+ */
+export const featuresBounds = (features: { geometry: { type: string } }[]): Bbox | null =>
+  union(features.flatMap((f) => positions((f.geometry as { coordinates?: unknown }).coordinates).map(pointBox)));
+
 /** The bounds of the points or geometries, or of the areas from the bbox index (small areas use their city). */
 export const boundsOf = (layer: MapLayer, rows: Rows, codes: string[], index: Record<string, Bbox> | null): Bbox | null => {
   if ("lng" in layer) return union(rows.flatMap((r) => [positionOf(r, layer)].filter((p) => p !== null).map(pointBox)));
@@ -713,6 +720,14 @@ export const renderMap = async (
     added = layers[0];
     if (added.error) throw new MapPlacementError(added.error);
     if (bounds) map.fitBounds(bounds, { padding: 24, maxZoom: 14, duration: 0 });
+    // Small areas are fitted to their city first. Once their shapes are drawn, fit the shapes themselves,
+    // or a trade area of a few hundred meters shows as a speck in a whole city.
+    if ("area" in layer && layer.area === "small_area") {
+      map.once("idle", () => {
+        const box = featuresBounds(map.queryRenderedFeatures({ layers: [ROWS_LAYER] }));
+        if (box) map.fitBounds(box, { padding: 24, maxZoom: 15, duration: 0 });
+      });
+    }
   } catch (e) {
     map.remove();
     throw e;
