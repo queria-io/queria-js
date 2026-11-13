@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { areaCode, areaRows, boundsOf, colorScale, geometriesOf, geometryFeatures, geometryParts, layerKind, legendOf, pointFeatures } from "./data-map.js";
 import { OTHER, SERIES } from "./palette.js";
 
-const RAMP = ["#d9ccf0", "#542e8c"];
+const RAMP = ["#edf8b1", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"];
 
 describe("areaCode", () => {
   it("restores leading zeros and drops the check digit", () => {
@@ -17,7 +17,7 @@ describe("areaCode", () => {
 
 describe("colorScale", () => {
   it("runs numbers from light to dark", () => {
-    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#d9ccf0", "#542e8c"], positions: [0, 1], legend: { column: "v", min: 0, max: 10, colors: RAMP } });
+    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#edf8b1", "#253494"], positions: [0, 1], legend: { column: "v", min: 0, max: 10, colors: RAMP } });
   });
   it("reads numbers written as text, and keeps a few non-numbers in a number column", () => {
     expect(colorScale([{ v: "1" }, { v: "3" }, { v: "-" }], "v").legend).toEqual({ column: "v", min: 1, max: 3, colors: RAMP });
@@ -41,13 +41,13 @@ describe("colorScale", () => {
   it("uses a log scale when a few values are far larger, and puts the middle value in the legend", () => {
     const { colors, legend } = colorScale([1, 2, 3, 10, 100].map((v) => ({ v })), "v");
     expect(legend).toEqual({ column: "v", min: 1, max: 100, mid: 10, colors: RAMP });
-    expect(colors[3]).toBe("#977dbe");
+    expect(colors[3]).toBe("#41b6c4");
     expect(colorScale([{ v: 1 }, { v: 5 }, { v: 9 }], "v").legend).not.toHaveProperty("mid");
   });
   it("takes the range from the placed rows only", () => {
     const { colors, legend } = colorScale([{ v: 1 }, { v: 2 }, { v: 1000 }], "v", (i) => i < 2);
     expect(legend).toEqual({ column: "v", min: 1, max: 2, colors: RAMP });
-    expect(colors[1]).toBe("#542e8c");
+    expect(colors[1]).toBe("#253494");
   });
   it("uses one color without a column", () => {
     const { colors, legend } = colorScale([{}, {}], undefined);
