@@ -87,7 +87,7 @@ Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), do
 <queria-table datasets="queria/e_stat" sql="SELECT ..."></queria-table>
 ```
 
-Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. The height is the CSS variable `--queria-table-height` (400px by default).
+Shows up to 100 rows (`limit` changes it). In React, `<Table sql={sql} />`; in JavaScript, `renderTable(el, rows)`. In React and JavaScript, `columns` sets the columns and their order, and `nullText` sets the text shown for NULL (empty by default). The height is the CSS variable `--queria-table-height` (400px by default); the header stays in view while the rows scroll. Values longer than `--queria-table-cell-width` (20em by default) are cut with an ellipsis, and the full value shows on hover. The colors follow the page's text color and color scheme; `--queria-table-border`, `--queria-table-muted` (NULL and the row count) and `--queria-table-header-background` change them, and `--queria-table-font` changes the font.
 
 ## Numbers
 
