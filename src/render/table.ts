@@ -82,9 +82,11 @@ const LONG_TEXT = 16;
 const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): HTMLElement => {
   const isNull = v === null || v === undefined;
   const text = isNull ? nullText : cellText(v, grouping);
-  const wrap = `white-space:pre-wrap;overflow-wrap:anywhere;max-width:var(--queria-table-cell-width,24em);text-align:left${text.length > LONG_TEXT ? ";min-width:min(16em,var(--queria-table-cell-width,24em))" : ""}`;
+  const align = right
+    ? "white-space:nowrap;text-align:right"
+    : `white-space:pre-wrap;overflow-wrap:anywhere;max-width:var(--queria-table-cell-width,24em);text-align:left${text.length > LONG_TEXT ? ";min-width:min(16em,var(--queria-table-cell-width,24em))" : ""}`;
   const td = Object.assign(document.createElement("td"), {
-    style: `${pad};${border};vertical-align:top;${right ? "white-space:nowrap;text-align:right" : wrap}${isNull ? `;${muted}` : ""}`,
+    style: `${pad};${border};vertical-align:top;${align}${isNull ? `;${muted}` : ""}`,
   });
   if (isLink(v)) td.append(link(v));
   else td.textContent = text;
