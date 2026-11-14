@@ -60,30 +60,47 @@ export const numericColumns = (rows: Rows, columns: string[]): Set<string> =>
 
 const border = "border-bottom:1px solid var(--queria-table-border,color-mix(in srgb,currentColor 15%,transparent))";
 const muted = "color:var(--queria-table-muted,color-mix(in srgb,currentColor 55%,transparent))";
+const pad = "padding:6px 12px";
+const stripe = "background:var(--queria-table-stripe,color-mix(in srgb,currentColor 4%,transparent))";
+
+/** Whether a value is a web address that a cell shows as a link: http or https, with no spaces. */
+export const isLink = (v: unknown): v is string => typeof v === "string" && /^https?:\/\/\S+$/i.test(v);
 
 const header = (text: string, right: boolean): HTMLElement =>
   Object.assign(document.createElement("th"), {
     textContent: text,
-    style: `position:sticky;top:0;padding:4px 8px;${border};white-space:nowrap;font-weight:500;background:var(--queria-table-header-background,Canvas);text-align:${right ? "right" : "left"}`,
+    style: `position:sticky;top:0;z-index:1;${pad};${border};white-space:nowrap;vertical-align:bottom;font-weight:600;background:var(--queria-table-header-background,Canvas);text-align:${right ? "right" : "left"}`,
   });
 
-// A long value is cut to --queria-table-cell-width with an ellipsis; the title shows all of it.
+const link = (url: string): HTMLElement =>
+  Object.assign(document.createElement("a"), { href: url, textContent: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
+
+// A long text keeps its column at least this wide, so a narrow page scrolls sideways instead of making it a tall strip.
+const LONG_TEXT = 16;
+
+// Numbers stay on one line. Text wraps at --queria-table-cell-width, so every value is shown in full.
 const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): HTMLElement => {
   const isNull = v === null || v === undefined;
   const text = isNull ? nullText : cellText(v, grouping);
-  return Object.assign(document.createElement("td"), {
-    textContent: text,
-    title: isNull ? "" : text,
-    style: `padding:4px 8px;${border};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:var(--queria-table-cell-width,20em);text-align:${right ? "right" : "left"}${isNull ? `;${muted}` : ""}`,
+  const align = right
+    ? "white-space:nowrap;text-align:right"
+    : `white-space:pre-wrap;overflow-wrap:anywhere;max-width:var(--queria-table-cell-width,24em);text-align:left${text.length > LONG_TEXT ? ";min-width:min(16em,var(--queria-table-cell-width,24em))" : ""}`;
+  const td = Object.assign(document.createElement("td"), {
+    style: `${pad};${border};vertical-align:top;${align}${isNull ? `;${muted}` : ""}`,
   });
+  if (isLink(v)) td.append(link(v));
+  else td.textContent = text;
+  return td;
 };
 
 /**
  * Draw rows as a table. Number columns are aligned right, with every decimal digit kept. Integers are grouped from
- * 10,000, except in columns named as codes, IDs or dates (isCodeColumn). Values come from the data, so they are set as text. The
- * height is the CSS variable --queria-table-height (400px by default); it scrolls beyond, with the header kept in view.
- * The colors follow the page; --queria-table-border, --queria-table-muted and --queria-table-header-background change
- * them, and --queria-table-font changes the font.
+ * 10,000, except in columns named as codes, IDs or dates (isCodeColumn). Values come from the data, so they are set as text;
+ * http and https addresses become links that open in a new tab. Text wraps at --queria-table-cell-width (24em by
+ * default) and is never cut. Every other row is shaded. The height is the CSS variable --queria-table-height (400px by
+ * default); it scrolls beyond, with the header kept in view. The colors follow the page; --queria-table-border,
+ * --queria-table-muted, --queria-table-header-background, --queria-table-stripe and --queria-table-link change them,
+ * and --queria-table-font changes the font.
  */
 export const renderTable = (
   el: HTMLElement,
@@ -93,13 +110,14 @@ export const renderTable = (
   const numeric = new Set([...numericColumns(rows, columns), ...right]);
   const codes = new Set(columns.filter(isCodeColumn));
   const table = Object.assign(document.createElement("table"), {
-    style: "border-collapse:separate;border-spacing:0;font:var(--queria-table-font,13px/1.4 system-ui,sans-serif)",
+    style: "border-collapse:separate;border-spacing:0;font:var(--queria-table-font,14px/1.5 system-ui,sans-serif)",
   });
   const head = table.createTHead().insertRow();
   columns.forEach((c) => head.append(header(c, numeric.has(c))));
   const body = table.createTBody();
-  rows.slice(0, limit).forEach((r) => {
+  rows.slice(0, limit).forEach((r, i) => {
     const tr = body.insertRow();
+    if (i % 2 === 1) tr.style.cssText = stripe;
     columns.forEach((c) => tr.append(cell(r[c], numeric.has(c), !codes.has(c), nullText)));
   });
   const box = Object.assign(document.createElement("div"), { style: "overflow:auto;max-height:var(--queria-table-height,400px)" });
