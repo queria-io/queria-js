@@ -5,7 +5,7 @@ export { chartTheme, preloadChart, renderChart, toneOf, withData, type Tone, typ
 export { mountMap, type MapHandle } from "./map.js";
 export { poweredByHtml } from "./poweredBy.js";
 export { renderKpi, type KpiOptions } from "./kpi.js";
-export { cellText, isCodeColumn, numericColumns, renderTable, type TableOptions } from "./table.js";
+export { cellText, isCodeColumn, isLink, numericColumns, renderTable, type TableOptions } from "./table.js";
 export {
   addMapLayers,
   areaCode,

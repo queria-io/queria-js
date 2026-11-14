@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellText, isCodeColumn, numericColumns } from "./table.js";
+import { cellText, isCodeColumn, isLink, numericColumns } from "./table.js";
 
 describe("cellText", () => {
   it("groups digits, writes objects as JSON and NULL as empty", () => {
@@ -49,5 +49,14 @@ describe("numericColumns", () => {
   it("keeps the columns whose values are all numbers, bigints or NULL", () => {
     const rows = [{ a: 1, b: "x", c: null, d: 1n }, { a: null, b: 2, c: 3, d: 2 }];
     expect(numericColumns(rows, ["a", "b", "c", "d"])).toEqual(new Set(["a", "c", "d"]));
+  });
+});
+
+describe("isLink", () => {
+  it("takes http and https addresses without spaces", () => {
+    const links = ["https://gikai.team-mir.ai/bills/1", "http://example.com", "HTTPS://EXAMPLE.COM/a?b=1"];
+    const others = ["gikai.team-mir.ai", "https://a b", "ftp://example.com", "see https://example.com", 1, null];
+    expect(links.filter(isLink)).toEqual(links);
+    expect(others.filter(isLink)).toEqual([]);
   });
 });
