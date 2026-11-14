@@ -1,4 +1,4 @@
-import type { CircleLayerSpecification, ExpressionSpecification, FilterSpecification, LayerSpecification, Map as MapLibreMap, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
+import type { CircleLayerSpecification, ExpressionSpecification, FilterSpecification, LayerSpecification, Map as MapLibreMap, MapLayerMouseEvent, PointLike, StyleSpecification } from "maplibre-gl";
 import { type Rows, toneOf } from "./chart.js";
 import { LAYER_COLORS, LINE_RAMP, OTHER, type Palette, PALETTES, RAMP, SERIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
@@ -530,6 +530,11 @@ export type AddMapLayersOptions = {
   below?: { fill?: string; point?: string };
   /** The language of numbers on the legend and on hover. By default the page's `lang`. */
   locale?: string;
+  /**
+   * Show the rows' text in a popup on hover and tap. `false` shows none, for maps that open popups of their own:
+   * get the text under the pointer with `textAt`.
+   */
+  popups?: boolean;
 };
 
 const ORDER: Record<LayerKind, number> = { fill: 0, line: 1, point: 2 };
@@ -546,8 +551,8 @@ const HEAD: FilterSpecification = ["all", ["==", "$type", "Polygon"], ["has", "h
 export const addMapLayers = async (
   map: MapLibreMap,
   entries: MapLayerRows[],
-  { below = {}, locale = map.getContainer().closest("[lang]")?.getAttribute("lang") || undefined }: AddMapLayersOptions = {},
-): Promise<{ layers: AddedMapLayer[]; bounds: Bbox | null; remove: () => void }> => {
+  { below = {}, locale = map.getContainer().closest("[lang]")?.getAttribute("lang") || undefined, popups = true }: AddMapLayersOptions = {},
+): Promise<{ layers: AddedMapLayer[]; bounds: Bbox | null; remove: () => void; textAt: (point: PointLike) => string[] }> => {
   const maplibregl = await loadMaplibre();
   const index = entries.some((e) => "area" in e.layer) ? await styleBboxIndex(map) : null;
   const firstLabel = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
@@ -653,7 +658,22 @@ export const addMapLayers = async (
   };
   const leave = () => popup.remove();
   const ids = [...hovers.keys()];
-  ids.forEach((id) => {
+  // The text of the topmost feature of each layer under the point. A row drawn by several map layers (a line and
+  // its arrowhead) gives the same text once.
+  const textAt = (point: PointLike): string[] => {
+    const shown = ids.filter((id) => map.getLayer(id));
+    if (shown.length === 0) return [];
+    const seen = new Set<string>();
+    const texts = new Set<string>();
+    for (const f of map.queryRenderedFeatures(point, { layers: shown })) {
+      if (seen.has(f.layer.id)) continue;
+      seen.add(f.layer.id);
+      const text = hovers.get(f.layer.id)?.(f);
+      if (text) texts.add(text);
+    }
+    return [...texts];
+  };
+  (popups ? ids : []).forEach((id) => {
     map.on("mousemove", id, show);
     map.on("click", id, show);
     map.on("mouseleave", id, leave);
@@ -661,6 +681,7 @@ export const addMapLayers = async (
   return {
     layers: layers.map(({ add: _, ...l }) => l),
     bounds: union(boxes),
+    textAt,
     remove: () => {
       popup.remove();
       ids.forEach((id) => {
