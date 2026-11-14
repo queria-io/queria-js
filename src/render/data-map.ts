@@ -658,12 +658,20 @@ export const addMapLayers = async (
   };
   const leave = () => popup.remove();
   const ids = [...hovers.keys()];
-  // The text of the topmost feature of each layer under the point.
+  // The text of the topmost feature of each layer under the point. A row drawn by several map layers (a line and
+  // its arrowhead) gives the same text once.
   const textAt = (point: PointLike): string[] => {
     const shown = ids.filter((id) => map.getLayer(id));
-    const features = shown.length > 0 ? map.queryRenderedFeatures(point, { layers: shown }) : [];
-    const firsts = features.filter((f, i) => features.findIndex((g) => g.layer.id === f.layer.id) === i);
-    return firsts.flatMap((f) => hovers.get(f.layer.id)?.(f) ?? []);
+    if (shown.length === 0) return [];
+    const seen = new Set<string>();
+    const texts = new Set<string>();
+    for (const f of map.queryRenderedFeatures(point, { layers: shown })) {
+      if (seen.has(f.layer.id)) continue;
+      seen.add(f.layer.id);
+      const text = hovers.get(f.layer.id)?.(f);
+      if (text) texts.add(text);
+    }
+    return [...texts];
   };
   (popups ? ids : []).forEach((id) => {
     map.on("mousemove", id, show);
