@@ -67,6 +67,8 @@ SQL that calls `ST_*` functions loads the DuckDB spatial extension on first use.
 
 To read datasets that are not public, pass a data token (`qd_...`) or a function that returns one: `connect({ datasets, token })`. The token is sent to the Queria API and to the hosts of the declared datasets. DuckDB is shared by the page, so use one token per page.
 
+To link a result to a page on queria.io that runs the same SQL and shows the table, with no login, use `await q.shareUrl(sql)`. Without a connection, `shareLink(sharePayload(sql, [{ alias: "e_gov", qualifiedName: "queria/e_gov" }]))` makes the same URL; pass a Vega-Lite spec as the third argument of `sharePayload` to show a chart instead of the table.
+
 ## Images
 
 To post a chart on social media, make it a PNG image: `chartPng(spec, rows, { sources, highlight, annotations })` returns a 1200 × 630 PNG blob in Queria's look, on a solid background, with the sources and the Queria logo under the chart. Pass the datasets from `await q.sources(sql)` as `sources`. `theme` picks light (the default) or dark colors; `width` and `height` set the size in CSS pixels (600 × 315 by default) and `scale` the pixels per CSS pixel (2 by default).

@@ -3,6 +3,8 @@ export {
   connect,
   plain,
   plainRows,
+  shareLink,
+  sharePayload,
   type Connection,
   type ConnectOptions,
   type Dataset,
