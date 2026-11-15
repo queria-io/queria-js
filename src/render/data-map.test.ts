@@ -27,6 +27,10 @@ describe("colorScale", () => {
     expect(colors[99]).toBe(DIVERGING[6]);
     expect(colorScale([{ v: 1 }, { v: 5 }], "v", undefined, { scale: "diverging" }).legend).toMatchObject({ mid: 0, colors: DIVERGING });
   });
+  it("keeps numbers with a sign on a ramp the author picked", () => {
+    const blues = ["#93c5fd", "#1e3a8a"];
+    expect(colorScale([{ v: -5 }, { v: 5 }], "v", undefined, { ramp: blues }).legend).toMatchObject({ min: -5, max: 5, colors: blues });
+  });
   it("keeps numbers of one sign on the light to dark ramp", () => {
     expect(colorScale([{ v: -5 }, { v: 0 }], "v").legend).toMatchObject({ colors: RAMP });
   });

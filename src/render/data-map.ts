@@ -21,12 +21,13 @@ export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: 
   /**
    * How `color` is colored: one color per value, numbers on a linear or log scale, or numbers with a sign from red
    * (below zero) to blue (above). By default numbers (also numbers written as text) run red to blue when some are
-   * below zero and some above, and otherwise on a scale that suits their spread; other values get one color each.
+   * below zero and some above and no `palette` is set, and otherwise on a scale that suits their spread; other
+   * values get one color each.
    */
   scale?: "category" | "linear" | "log" | "diverging";
   /** Words for the low and high ends of the legend, such as ["減った", "増えた"]. */
   ends?: readonly [string, string];
-  /** The ramp for numbers. A layer without `color` takes its dark end. By default yellow to green to blue. */
+  /** The ramp for numbers, also for numbers with a sign. A layer without `color` takes its dark end. By default light to dark blue. */
   palette?: Palette;
   /** More columns shown on hover, one line each. */
   popup?: string[];
@@ -198,7 +199,9 @@ export const colorScale = (
   const sorted = nums.filter((v, i): v is number => v !== null && placed(i)).sort((a, b) => a - b);
   if (sorted.length === 0) return { colors: rows.map(() => fixed), positions: null, legend: null };
   const [min, max] = [sorted[0], sorted[sorted.length - 1]];
-  if (scale === "diverging" || (scale === undefined && min < 0 && max > 0)) return divergingScale(column, nums, sorted, ends);
+  // A ramp the author picked (a palette) keeps numbers with a sign on that ramp, unless the scale asks for red to blue.
+  const ownRamp = ramp !== RAMP && ramp !== LINE_RAMP;
+  if (scale === "diverging" || (scale === undefined && !ownRamp && min < 0 && max > 0)) return divergingScale(column, nums, sorted, ends);
   const log = scale === "log" ? min > 0 : scale === undefined && isSkewed(sorted);
   const at = log ? Math.log : (v: number) => v;
   const t = (v: number) => (max === min ? 1 : Math.min(1, Math.max(0, (at(v) - at(min)) / (at(max) - at(min)))));
@@ -274,7 +277,9 @@ export const legendElement = (
       section.append(div(`width:120px;height:8px;border-radius:2px;background:${gradient(legend.colors)}`), row);
       if (legend.ends) {
         const words = div("display:flex;justify-content:space-between;gap:8px;font-weight:600");
-        words.append(...legend.ends.map((w, i) => div(`color:${legend.colors[i === 0 ? 0 : legend.colors.length - 1]}`, i === 0 ? `← ${w}` : `${w} →`)));
+        // Red and blue words on the red to blue legend; on a light to dark ramp the light end is too pale for text.
+        const wordColor = (i: number) => (legend.colors === DIVERGING ? `color:${DIVERGING[i === 0 ? 0 : DIVERGING.length - 1]}` : "");
+        words.append(...legend.ends.map((w, i) => div(wordColor(i), i === 0 ? `← ${w}` : `${w} →`)));
         section.append(words);
       }
     } else {

@@ -193,6 +193,26 @@ export const toneOf = (color: string): Tone => (isLight(color) ? "dark" : "light
 const markType = (mark: unknown): unknown => (typeof mark === "object" && mark !== null && "type" in mark ? mark.type : mark);
 
 /**
+ * Rewrites the encoding of each view of a single or layered spec with `fn`, which gets the rows the view reads: its
+ * named data, or else the rows of the view around it. Views whose encoding and layers are unchanged are kept as
+ * they are, so a caller can tell whether anything changed.
+ */
+const mapEncodings = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>, fn: (enc: Encoding, rows: Rows, v: View) => Encoding): ChartSpec => {
+  const named = (v: View): Rows | undefined => {
+    const name = isView(v.data) ? v.data.name : undefined;
+    return isRows(data) || typeof name !== "string" ? undefined : data[name];
+  };
+  const paint = (v: View, around: Rows): View => {
+    const rows = named(v) ?? around;
+    const encoding = v.encoding ? fn(v.encoding, rows, v) : v.encoding;
+    const layer = v.layer?.map((l) => paint(l, rows));
+    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
+  };
+  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+};
+
+/**
  * Color the highlighted values purple and the rest gray. With a color field, the series named in values are purple;
  * without one, the marks whose x, y or detail value is in values are (category axes are tried before number axes).
  * Text marks keep their color, and so do colors by a number (a heatmap). Layers are colored one by one, each with
@@ -209,10 +229,6 @@ export const withHighlight = (
   // Compared as text, so "2020" from an HTML attribute matches the number 2020 in the rows.
   const texts = values.map(String);
   const hit = (v: unknown): boolean => keysOf(v).some((k) => texts.includes(k));
-  const named = (v: View): Rows | undefined => {
-    const name = isView(v.data) ? v.data.name : undefined;
-    return isRows(data) || typeof name !== "string" ? undefined : data[name];
-  };
   const color = (enc: Encoding, rows: Rows): Encoding => {
     const field = enc.color?.field;
     if (typeof field === "string") {
@@ -240,14 +256,7 @@ export const withHighlight = (
       },
     };
   };
-  const paint = (v: View, around: Rows): View => {
-    const rows = named(v) ?? around;
-    const encoding = v.encoding && markType(v.mark) !== "text" ? color(v.encoding, rows) : v.encoding;
-    const layer = v.layer?.map((l) => paint(l, rows));
-    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
-    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
-  };
-  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+  return mapEncodings(spec, data, (enc, rows, v) => (markType(v.mark) === "text" ? enc : color(enc, rows)));
 };
 
 /**
@@ -256,10 +265,6 @@ export const withHighlight = (
  * looked at one by one, with the rows they read, as in withHighlight.
  */
 export const withSignedColors = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>): ChartSpec => {
-  const named = (v: View): Rows | undefined => {
-    const name = isView(v.data) ? v.data.name : undefined;
-    return isRows(data) || typeof name !== "string" ? undefined : data[name];
-  };
   const color = (enc: Encoding, rows: Rows): Encoding => {
     const field = enc.color?.field;
     if (typeof field !== "string" || enc.color?.type !== "quantitative") return enc;
@@ -270,14 +275,7 @@ export const withSignedColors = (spec: ChartSpec, data: Rows | Readonly<Record<s
       ? { ...enc, color: { ...enc.color, scale: { ...scale, domainMid: 0, range: "diverging" } } }
       : enc;
   };
-  const paint = (v: View, around: Rows): View => {
-    const rows = named(v) ?? around;
-    const encoding = v.encoding ? color(v.encoding, rows) : v.encoding;
-    const layer = v.layer?.map((l) => paint(l, rows));
-    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
-    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
-  };
-  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+  return mapEncodings(spec, data, color);
 };
 
 export type ChartOptions = {
