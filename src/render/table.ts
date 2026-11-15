@@ -75,6 +75,9 @@ const header = (text: string, right: boolean): HTMLElement =>
 const link = (url: string): HTMLElement =>
   Object.assign(document.createElement("a"), { href: url, textContent: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
 
+// The outline of the selected cell and the border of its popover.
+const SELECTED = "var(--queria-table-selected,Highlight)";
+
 const LABELS = {
   ja: { copy: "コピー", copied: "コピーしました", close: "閉じる" },
   en: { copy: "Copy", copied: "Copied", close: "Close" },
@@ -89,7 +92,7 @@ const cellPopover = (lang: string | null | undefined, onClose: () => void) => {
   const labels = lang?.toLowerCase().startsWith("ja") ? LABELS.ja : LABELS.en;
   const pop = Object.assign(document.createElement("div"), {
     popover: "auto",
-    style: `position:fixed;inset:auto;margin:0;box-sizing:border-box;max-width:min(24em,calc(100vw - 16px));max-height:50vh;overflow:auto;padding:10px 12px;${border.replace("border-bottom", "border")};border-radius:8px;box-shadow:0 4px 16px rgb(0 0 0/.2);color:inherit;background:var(--queria-table-header-background,Canvas);font:var(--queria-table-font,14px/1.5 system-ui,sans-serif)`,
+    style: `position:fixed;inset:auto;margin:0;box-sizing:border-box;max-width:min(24em,calc(100vw - 16px));max-height:50vh;overflow:auto;padding:10px 12px;border:2px solid ${SELECTED};border-radius:8px;box-shadow:0 4px 16px rgb(0 0 0/.2);color:inherit;background:var(--queria-table-header-background,Canvas);font:var(--queria-table-font,14px/1.5 system-ui,sans-serif)`,
   });
   const title = Object.assign(document.createElement("div"), { style: `font-weight:600;overflow-wrap:anywhere;${muted}` });
   const value = Object.assign(document.createElement("div"), { style: "margin:4px 0 10px;white-space:pre-wrap;overflow-wrap:anywhere" });
@@ -114,7 +117,8 @@ const cellPopover = (lang: string | null | undefined, onClose: () => void) => {
   });
   return {
     pop,
-    // Right of the cell, or below it where the right side has no room, kept inside the window.
+    // Joined to the cell's outline: right of the cell, or below it where the right side has no room, kept inside the
+    // window. The corner that meets the cell is square.
     show: (td: HTMLElement, column: string, text: string) => {
       title.textContent = column;
       value.textContent = text;
@@ -124,10 +128,18 @@ const cellPopover = (lang: string | null | undefined, onClose: () => void) => {
       pop.showPopover();
       const cell = td.getBoundingClientRect();
       const { width, height } = pop.getBoundingClientRect();
-      const right = cell.right + 4 + width <= innerWidth - 8;
-      const left = right ? cell.right + 4 : Math.max(8, Math.min(cell.left, innerWidth - width - 8));
-      const top = Math.max(8, Math.min(right ? cell.top : cell.bottom + 4, innerHeight - height - 8));
-      Object.assign(pop.style, { left: `${left}px`, top: `${top}px` });
+      const fits = (x: number) => x >= 8 && x + width <= innerWidth - 8;
+      // Right of the cell, else below it starting at its left edge, else below it ending at its right edge.
+      const [left, corner] = fits(cell.right - 2)
+        ? [cell.right - 2, "borderTopLeftRadius"]
+        : fits(cell.left)
+          ? [cell.left, "borderTopLeftRadius"]
+          : fits(cell.right - width)
+            ? [cell.right - width, "borderTopRightRadius"]
+            : [8, ""];
+      const top = Math.max(8, Math.min(left === cell.right - 2 ? cell.top : cell.bottom - 2, innerHeight - height - 8));
+      pop.style.borderRadius = "8px";
+      Object.assign(pop.style, { left: `${left}px`, top: `${top}px` }, corner ? { [corner]: "0" } : {});
       addEventListener("scroll", hide, true);
     },
   };
@@ -192,7 +204,7 @@ export const renderTable = (
   const select = (td: HTMLTableCellElement | null) => {
     selected?.style.removeProperty("outline");
     selected = td;
-    td?.style.setProperty("outline", "2px solid var(--queria-table-selected,Highlight)");
+    td?.style.setProperty("outline", `2px solid ${SELECTED}`);
     td?.style.setProperty("outline-offset", "-2px");
   };
   const popover = cellPopover(el.closest("[lang]")?.getAttribute("lang"), () => select(null));
