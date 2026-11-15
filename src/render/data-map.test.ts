@@ -15,10 +15,10 @@ describe("areaCode", () => {
 
 describe("colorScale", () => {
   it("runs numbers with a sign red to white to blue, with zero in the middle", () => {
-    const { colors, positions, legend } = colorScale([{ v: -10 }, { v: 0 }, { v: 10 }], "v", undefined, { ends: ["減った", "増えた"] });
+    const { colors, positions, legend } = colorScale([{ v: -10 }, { v: 0 }, { v: 10 }], "v", undefined, { ends: ["減少", "増加"] });
     expect(colors).toEqual([DIVERGING[0], DIVERGING[3], DIVERGING[6]]);
     expect(positions).toEqual([1, 0, 1]);
-    expect(legend).toEqual({ column: "v", min: -10, max: 10, mid: 0, colors: DIVERGING, clamped: { min: false, max: false }, ends: ["減った", "増えた"] });
+    expect(legend).toEqual({ column: "v", min: -10, max: 10, mid: 0, colors: DIVERGING, clamped: { min: false, max: false }, ends: ["減少", "増加"] });
   });
   it("gives both signs the same bound, leaving out the outer 2%, so that an outlier does not wash out the rest", () => {
     const rows = [...Array.from({ length: 99 }, (_, i) => ({ v: i - 49 })), { v: 1000 }];
