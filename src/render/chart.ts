@@ -1,5 +1,5 @@
 import { type Annotation, withAnnotations } from "./annotate.js";
-import { SERIES } from "./palette.js";
+import { DIVERGING, RAMP, SERIES } from "./palette.js";
 import { type Encoding, isView, keysOf, type View } from "./view.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
@@ -141,7 +141,7 @@ export const chartTheme = (tone: Tone = "light", font = "system-ui, sans-serif",
     background: "transparent",
     font,
     view: { stroke: null },
-    range: { category: SERIES },
+    range: { category: SERIES, ramp: RAMP, heatmap: RAMP, diverging: DIVERGING },
     title: { color: fg, fontSize: 15, fontWeight: 600, anchor: "start", offset: 12 },
     axis: { labelColor: muted, titleColor: muted, titleFontWeight: "normal", labelFontSize: 11, titleFontSize: 11, gridColor: border, domain: false, ticks: false, labelPadding: 6 },
     axisX: { labelAngle: 0 },
@@ -250,6 +250,36 @@ export const withHighlight = (
   return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
 };
 
+/**
+ * Color numbers with a sign red to blue around zero: a color by a number whose values are below zero and above,
+ * and whose scale names no scheme, range or domain, takes the diverging range with zero in the middle. Layers are
+ * looked at one by one, with the rows they read, as in withHighlight.
+ */
+export const withSignedColors = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>): ChartSpec => {
+  const named = (v: View): Rows | undefined => {
+    const name = isView(v.data) ? v.data.name : undefined;
+    return isRows(data) || typeof name !== "string" ? undefined : data[name];
+  };
+  const color = (enc: Encoding, rows: Rows): Encoding => {
+    const field = enc.color?.field;
+    if (typeof field !== "string" || enc.color?.type !== "quantitative") return enc;
+    const scale = isView(enc.color.scale) ? enc.color.scale : {};
+    if (enc.color.scale === null || ["scheme", "range", "domain", "domainMid"].some((k) => k in scale)) return enc;
+    const nums = rows.map((r) => Number(r[field])).filter(Number.isFinite);
+    return nums.some((n) => n < 0) && nums.some((n) => n > 0)
+      ? { ...enc, color: { ...enc.color, scale: { ...scale, domainMid: 0, range: "diverging" } } }
+      : enc;
+  };
+  const paint = (v: View, around: Rows): View => {
+    const rows = named(v) ?? around;
+    const encoding = v.encoding ? color(v.encoding, rows) : v.encoding;
+    const layer = v.layer?.map((l) => paint(l, rows));
+    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
+  };
+  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+};
+
 export type ChartOptions = {
   /** Values to color purple, such as a name on the axis or a series. Everything else stays gray. */
   highlight?: unknown;
@@ -314,7 +344,8 @@ export const renderChart = async (
   const style = getComputedStyle(el);
   const tone = theme ?? toneOf(style.color);
   const { embed, expressionInterpreter } = await loadDrawer();
-  const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
+  const signed = withSignedColors(spec, data);
+  const shown = highlight === undefined ? signed : withHighlight(signed, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
   const { fg, muted } = TONES[tone];
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const { view, finalize } = await embed(el, withData(fitsPanels(spec) ? withPanelWidth(noted.spec) : noted.spec, data) as VisualizationSpec, {
@@ -329,7 +360,7 @@ export const renderChart = async (
     tooltip: { theme: tone },
   });
   // Whether a highlighted value was found, and how many notes were drawn. Values that are not found are left out
-  const result = { view, highlighted: shown !== spec, annotated: noted.added };
+  const result = { view, highlighted: shown !== signed, annotated: noted.added };
   if (!fitsPanels(spec)) return { ...result, finalize };
   // Panels are sized to the element as width "container" sizes a single view, again when the element is resized.
   const fitTo = panelFitter(view);

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { areaCode, areaRows, boundsOf, colorScale, geometriesBounds, geometriesOf, geometryFeatures, geometryParts, layerKind, legendOf, pointFeatures } from "./data-map.js";
-import { OTHER, SERIES } from "./palette.js";
-
-const RAMP = ["#edf8b1", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"];
+import { DIVERGING, OTHER, RAMP, SERIES } from "./palette.js";
 
 describe("areaCode", () => {
   it("restores leading zeros and drops the check digit", () => {
@@ -16,8 +14,24 @@ describe("areaCode", () => {
 });
 
 describe("colorScale", () => {
+  it("runs numbers with a sign red to white to blue, with zero in the middle", () => {
+    const { colors, positions, legend } = colorScale([{ v: -10 }, { v: 0 }, { v: 10 }], "v", undefined, { ends: ["減った", "増えた"] });
+    expect(colors).toEqual([DIVERGING[0], DIVERGING[3], DIVERGING[6]]);
+    expect(positions).toEqual([1, 0, 1]);
+    expect(legend).toEqual({ column: "v", min: -10, max: 10, mid: 0, colors: DIVERGING, clamped: { min: false, max: false }, ends: ["減った", "増えた"] });
+  });
+  it("gives both signs the same bound, leaving out the outer 2%, so that an outlier does not wash out the rest", () => {
+    const rows = [...Array.from({ length: 99 }, (_, i) => ({ v: i - 49 })), { v: 1000 }];
+    const { colors, legend } = colorScale(rows, "v");
+    expect(legend).toMatchObject({ min: -49, max: 49, clamped: { min: false, max: true } });
+    expect(colors[99]).toBe(DIVERGING[6]);
+    expect(colorScale([{ v: 1 }, { v: 5 }], "v", undefined, { scale: "diverging" }).legend).toMatchObject({ mid: 0, colors: DIVERGING });
+  });
+  it("keeps numbers of one sign on the light to dark ramp", () => {
+    expect(colorScale([{ v: -5 }, { v: 0 }], "v").legend).toMatchObject({ colors: RAMP });
+  });
   it("runs numbers from light to dark", () => {
-    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: ["#edf8b1", "#253494"], positions: [0, 1], legend: { column: "v", min: 0, max: 10, colors: RAMP } });
+    expect(colorScale([{ v: 0 }, { v: 10 }], "v")).toEqual({ colors: [RAMP[0], RAMP[4]], positions: [0, 1], legend: { column: "v", min: 0, max: 10, colors: RAMP } });
   });
   it("reads numbers written as text, and keeps a few non-numbers in a number column", () => {
     expect(colorScale([{ v: "1" }, { v: "3" }, { v: "-" }], "v").legend).toEqual({ column: "v", min: 1, max: 3, colors: RAMP });
@@ -41,13 +55,13 @@ describe("colorScale", () => {
   it("uses a log scale when a few values are far larger, and puts the middle value in the legend", () => {
     const { colors, legend } = colorScale([1, 2, 3, 10, 100].map((v) => ({ v })), "v");
     expect(legend).toEqual({ column: "v", min: 1, max: 100, mid: 10, colors: RAMP });
-    expect(colors[3]).toBe("#41b6c4");
+    expect(colors[3]).toBe(RAMP[2]);
     expect(colorScale([{ v: 1 }, { v: 5 }, { v: 9 }], "v").legend).not.toHaveProperty("mid");
   });
   it("takes the range from the placed rows only", () => {
     const { colors, legend } = colorScale([{ v: 1 }, { v: 2 }, { v: 1000 }], "v", (i) => i < 2);
     expect(legend).toEqual({ column: "v", min: 1, max: 2, colors: RAMP });
-    expect(colors[1]).toBe("#253494");
+    expect(colors[1]).toBe(RAMP[4]);
   });
   it("uses one color without a column", () => {
     const { colors, legend } = colorScale([{}, {}], undefined);

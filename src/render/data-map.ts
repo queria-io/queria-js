@@ -1,6 +1,6 @@
 import type { CircleLayerSpecification, ExpressionSpecification, FilterSpecification, LayerSpecification, Map as MapLibreMap, MapLayerMouseEvent, PointLike, StyleSpecification } from "maplibre-gl";
 import { type Rows, toneOf } from "./chart.js";
-import { LAYER_COLORS, LINE_RAMP, OTHER, type Palette, PALETTES, RAMP, SERIES } from "./palette.js";
+import { DIVERGING, LAYER_COLORS, LINE_RAMP, OTHER, type Palette, PALETTES, RAMP, SERIES } from "./palette.js";
 import { fetchFrom } from "../fetch.js";
 
 export type AreaLevel = "prefecture" | "city" | "small_area";
@@ -19,10 +19,13 @@ export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: 
   /** Show what the colors mean. On by default when `color` is set. */
   legend?: boolean;
   /**
-   * How `color` is colored: one color per value, or numbers on a linear or log scale. By default numbers (also
-   * numbers written as text) run on a scale that suits their spread, and other values get one color each.
+   * How `color` is colored: one color per value, numbers on a linear or log scale, or numbers with a sign from red
+   * (below zero) to blue (above). By default numbers (also numbers written as text) run red to blue when some are
+   * below zero and some above, and otherwise on a scale that suits their spread; other values get one color each.
    */
-  scale?: "category" | "linear" | "log";
+  scale?: "category" | "linear" | "log" | "diverging";
+  /** Words for the low and high ends of the legend, such as ["減った", "増えた"]. */
+  ends?: readonly [string, string];
   /** The ramp for numbers. A layer without `color` takes its dark end. By default yellow to green to blue. */
   palette?: Palette;
   /** More columns shown on hover, one line each. */
@@ -68,11 +71,20 @@ const gradient = (stops: readonly string[], from = 0, to = 1): string =>
 
 /**
  * What the colors mean: a range of numbers along the `colors` stops, or one color per value. `mid` is the value at
- * the middle of the ramp when the numbers are colored on a log scale. Values beyond the series colors are gathered
- * as the last item, in gray.
+ * the middle of the ramp: on a log scale, or zero when numbers with a sign run red to blue. `clamped` says that
+ * values beyond `min` or `max` take the color of that end. `ends` are words for the two ends. Values beyond the
+ * series colors are gathered as the last item, in gray.
  */
 export type Legend =
-  | { column: string; min: number; max: number; mid?: number; colors: readonly string[] }
+  | {
+      column: string;
+      min: number;
+      max: number;
+      mid?: number;
+      colors: readonly string[];
+      clamped?: { min: boolean; max: boolean };
+      ends?: readonly [string, string];
+    }
   | { column: string; items: { label: string; color: string }[] };
 
 /** A number, also from text or a bigint, or null. */
@@ -114,8 +126,37 @@ const isSkewed = (sorted: number[]): boolean => {
 /** The name of the gathered categories. */
 const otherLabel = (locale: string | undefined): string => (locale?.toLowerCase().startsWith("ja") ? "その他" : "Other");
 
+/** The value at the share q (0 to 1) of the sorted numbers. */
+const quantile = (sorted: number[], q: number): number => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+
+/**
+ * Numbers with a sign, red to white to blue around zero. Both sides run to the same bound, so that equal colors mean
+ * equal sizes; the bound leaves out the outer 2% on each side, so that a few outliers do not wash out the rest.
+ */
+const divergingScale = (column: string, nums: (number | null)[], sorted: number[], ends: ColorOptions["ends"]) => {
+  const [min, max] = [sorted[0], sorted[sorted.length - 1]];
+  const bound = Math.max(Math.abs(Math.min(0, quantile(sorted, 0.02))), Math.max(0, quantile(sorted, 0.98))) || Math.max(-min, max, 1);
+  const t = (v: number) => Math.min(1, Math.max(0, 0.5 + v / (2 * bound)));
+  return {
+    colors: nums.map((v) => (v === null ? "#d4d4d4" : mix(DIVERGING, t(v)))),
+    // Line widths follow the size, whichever the sign.
+    positions: nums.map((v) => (v === null ? 0 : Math.min(1, Math.abs(v) / bound))),
+    legend: {
+      column,
+      min: -bound,
+      max: bound,
+      mid: 0,
+      colors: DIVERGING,
+      clamped: { min: min < -bound, max: max > bound },
+      ...(ends && { ends }),
+    },
+  };
+};
+
 export type ColorOptions = {
   scale?: MapLayer["scale"];
+  /** Words for the low and high ends of the legend. */
+  ends?: MapLayer["ends"];
   /** The stops of the number ramp. */
   ramp?: readonly string[];
   /** The color of every row without a color column. */
@@ -125,9 +166,9 @@ export type ColorOptions = {
 };
 
 /**
- * A color for each row, its position along the ramp (0 to 1, for line widths), and the legend. Numbers run from
- * light to dark between the smallest and largest value, on a log scale when a few values are far larger than the
- * rest; categories take the series colors in order of first appearance, and the values after the seventh are
+ * A color for each row, its position along the ramp (0 to 1, for line widths), and the legend. Numbers with a sign
+ * run red to blue around zero; other numbers run from light to dark between the smallest and largest value, on a
+ * log scale when a few values are far larger than the rest; categories take the series colors in order of first appearance, and the values after the seventh are
  * gathered in gray. Only the rows that are `placed` on the map count, so a total row without a shape does not
  * stretch the range.
  */
@@ -135,7 +176,7 @@ export const colorScale = (
   rows: Rows,
   column: string | undefined,
   placed: (i: number) => boolean = () => true,
-  { scale, ramp = RAMP, fixed = LAYER_COLORS[0], locale }: ColorOptions = {},
+  { scale, ramp = RAMP, fixed = LAYER_COLORS[0], locale, ends }: ColorOptions = {},
 ): { colors: string[]; positions: number[] | null; legend: Legend | null } => {
   if (column === undefined) return { colors: rows.map(() => fixed), positions: null, legend: null };
   const values = rows.map((r) => r[column]);
@@ -157,6 +198,7 @@ export const colorScale = (
   const sorted = nums.filter((v, i): v is number => v !== null && placed(i)).sort((a, b) => a - b);
   if (sorted.length === 0) return { colors: rows.map(() => fixed), positions: null, legend: null };
   const [min, max] = [sorted[0], sorted[sorted.length - 1]];
+  if (scale === "diverging" || (scale === undefined && min < 0 && max > 0)) return divergingScale(column, nums, sorted, ends);
   const log = scale === "log" ? min > 0 : scale === undefined && isSkewed(sorted);
   const at = log ? Math.log : (v: number) => v;
   const t = (v: number) => (max === min ? 1 : Math.min(1, Math.max(0, (at(v) - at(min)) / (at(max) - at(min)))));
@@ -164,7 +206,7 @@ export const colorScale = (
   return {
     colors: nums.map((v) => (v === null ? "#d4d4d4" : mix(ramp, t(v)))),
     positions,
-    legend: { column, min, max, colors: ramp, ...(log && { mid: Math.sqrt(min * max) }) },
+    legend: { column, min, max, colors: ramp, ...(log && { mid: Math.sqrt(min * max) }), ...(ends && { ends }) },
   };
 };
 
@@ -225,9 +267,16 @@ export const legendElement = (
     if ("min" in legend) {
       // On a log scale the middle value shows that colors are not proportional to the values.
       const labels = [legend.min, ...(legend.mid === undefined ? [] : [legend.mid]), legend.max];
+      // A clamped end shows that values beyond it take its color.
+      const prefix = (i: number) => (i === 0 && legend.clamped?.min ? "≤" : i === labels.length - 1 && legend.clamped?.max ? "≥" : "");
       const row = div("display:flex;justify-content:space-between;gap:8px");
-      row.append(...labels.map((n, i) => div("", formatNumber(n, locale, i === 1 && labels.length === 3 ? 2 : undefined))));
+      row.append(...labels.map((n, i) => div("", prefix(i) + formatNumber(n, locale, i === 1 && labels.length === 3 && n !== 0 ? 2 : undefined))));
       section.append(div(`width:120px;height:8px;border-radius:2px;background:${gradient(legend.colors)}`), row);
+      if (legend.ends) {
+        const words = div("display:flex;justify-content:space-between;gap:8px;font-weight:600");
+        words.append(...legend.ends.map((w, i) => div(`color:${legend.colors[i === 0 ? 0 : legend.colors.length - 1]}`, i === 0 ? `← ${w}` : `${w} →`)));
+        section.append(words);
+      }
     } else {
       legend.items.forEach(({ label, color: c }) => {
         const item = div("display:flex;align-items:center;gap:4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis");
@@ -351,7 +400,7 @@ type LayerContext = { index?: number; locale?: string; bbox?: Record<string, Bbo
 const layerColors = (layer: MapLayer, rows: Rows, { index = 0, locale, bbox = null }: LayerContext) => {
   const ramp = layer.palette ? PALETTES[layer.palette] : layerKind(layer, rows) === "line" ? LINE_RAMP : RAMP;
   const fixed = layer.palette ? PALETTES[layer.palette][1] : LAYER_COLORS[index % LAYER_COLORS.length];
-  return { fixed, ...colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], bbox), { scale: layer.scale, ramp, fixed, locale }) };
+  return { fixed, ...colorScale(rows, layer.color, (i) => isPlaced(layer, rows[i], bbox), { scale: layer.scale, ramp, fixed, locale, ends: layer.ends }) };
 };
 
 /** Points as GeoJSON. Rows without a valid position are left out. A feature's `row` is the index of its row. */
