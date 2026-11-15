@@ -25,7 +25,7 @@ export type MapLayer = ({ area: AreaLevel; code: string } | { lng: string; lat: 
    * values get one color each.
    */
   scale?: "category" | "linear" | "log" | "diverging";
-  /** Words for the low and high ends of the legend, such as ["減った", "増えた"]. */
+  /** Words for the low and high ends of the legend, such as ["減少", "増加"]. */
   ends?: readonly [string, string];
   /** The ramp for numbers, also for numbers with a sign. A layer without `color` takes its dark end. By default light to dark blue. */
   palette?: Palette;
