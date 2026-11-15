@@ -75,19 +75,58 @@ const header = (text: string, right: boolean): HTMLElement =>
 const link = (url: string): HTMLElement =>
   Object.assign(document.createElement("a"), { href: url, textContent: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
 
+const LABELS = {
+  ja: { copy: "コピー", copied: "コピーしました", close: "閉じる" },
+  en: { copy: "Copy", copied: "Copied", close: "Close" },
+};
+
+const button = (text: string, onclick: () => void): HTMLButtonElement =>
+  Object.assign(document.createElement("button"), { type: "button", textContent: text, onclick, style: "font:inherit;padding:4px 12px;cursor:pointer" });
+
+// A dialog with a cell's column name and full value, and a button that copies the value. Where the page may not write
+// to the clipboard, the button selects the value instead.
+const openCell = (parent: HTMLElement, column: string, text: string): void => {
+  const labels = parent.closest("[lang]")?.getAttribute("lang")?.toLowerCase().startsWith("ja") ? LABELS.ja : LABELS.en;
+  const dialog = Object.assign(document.createElement("dialog"), {
+    style: "max-width:min(40em,90vw);padding:16px;border:1px solid var(--queria-table-border,color-mix(in srgb,currentColor 25%,transparent));border-radius:8px;color:inherit;background:var(--queria-table-header-background,Canvas);font:var(--queria-table-font,14px/1.5 system-ui,sans-serif)",
+    onclose: () => dialog.remove(),
+    onclick: (e: MouseEvent) => e.target === dialog && dialog.close(),
+  });
+  const title = Object.assign(document.createElement("div"), { textContent: column, style: `font-weight:600;${muted}` });
+  const value = Object.assign(document.createElement("div"), { textContent: text, style: "margin:8px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;user-select:text" });
+  const copy = button(labels.copy, () =>
+    // Promise.resolve runs writeText inside the promise, so a page without navigator.clipboard falls back too.
+    Promise.resolve().then(() => navigator.clipboard.writeText(text)).then(
+      () => {
+        copy.textContent = labels.copied;
+      },
+      () => getSelection()?.selectAllChildren(value),
+    ),
+  );
+  const actions = Object.assign(document.createElement("div"), { style: "display:flex;gap:8px;justify-content:flex-end" });
+  actions.append(copy, button(labels.close, () => dialog.close()));
+  dialog.append(title, value, actions);
+  parent.append(dialog);
+  dialog.showModal();
+};
+
 // A long text keeps its column at least this wide, so a narrow page scrolls sideways instead of making it a tall strip.
 const LONG_TEXT = 16;
 
 // Numbers stay on one line. Text wraps at --queria-table-cell-width, so every value is shown in full.
-const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): HTMLElement => {
+// A click on a cell opens its value in a dialog (openCell), unless it lands on a link or ends a text selection.
+const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string, open: (text: string) => void): HTMLElement => {
   const isNull = v === null || v === undefined;
   const text = isNull ? nullText : cellText(v, grouping);
   const align = right
     ? "white-space:nowrap;text-align:right"
     : `white-space:pre-wrap;overflow-wrap:anywhere;max-width:var(--queria-table-cell-width,24em);text-align:left${text.length > LONG_TEXT ? ";min-width:min(16em,var(--queria-table-cell-width,24em))" : ""}`;
   const td = Object.assign(document.createElement("td"), {
-    style: `${pad};${border};vertical-align:top;${align}${isNull ? `;${muted}` : ""}`,
+    style: `${pad};${border};vertical-align:top;${align}${isNull ? `;${muted}` : ";cursor:pointer"}`,
   });
+  if (!isNull) td.onclick = (e) => {
+    if (e.target === td && !getSelection()?.toString()) open(cellText(v, false));
+  };
   if (isLink(v)) td.append(link(v));
   else td.textContent = text;
   return td;
@@ -98,7 +137,9 @@ const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): 
  * 10,000, except in columns named as codes, IDs or dates (isCodeColumn). Values come from the data, so they are set as text;
  * http and https addresses become links that open in a new tab. Text wraps at --queria-table-cell-width (24em by
  * default) and is never cut. Every other row is shaded. The height is the CSS variable --queria-table-height (400px by
- * default); it scrolls beyond, with the header kept in view. The colors follow the page; --queria-table-border,
+ * default); it scrolls beyond, with the header kept in view. A click on a cell opens its full value in a dialog with a
+ * button that copies it (numbers without digit grouping); the labels are Japanese under a page or element whose lang is
+ * ja, English otherwise. The colors follow the page; --queria-table-border,
  * --queria-table-muted, --queria-table-header-background, --queria-table-stripe and --queria-table-link change them,
  * and --queria-table-font changes the font.
  */
@@ -107,6 +148,7 @@ export const renderTable = (
   rows: Rows,
   { limit = 100, columns = Object.keys(rows[0] ?? {}), nullText = "", right = [] }: TableOptions = {},
 ): { finalize: () => void } => {
+  const box = Object.assign(document.createElement("div"), { style: "overflow:auto;max-height:var(--queria-table-height,400px)" });
   const numeric = new Set([...numericColumns(rows, columns), ...right]);
   const codes = new Set(columns.filter(isCodeColumn));
   const table = Object.assign(document.createElement("table"), {
@@ -118,9 +160,8 @@ export const renderTable = (
   rows.slice(0, limit).forEach((r, i) => {
     const tr = body.insertRow();
     if (i % 2 === 1) tr.style.cssText = stripe;
-    columns.forEach((c) => tr.append(cell(r[c], numeric.has(c), !codes.has(c), nullText)));
+    columns.forEach((c) => tr.append(cell(r[c], numeric.has(c), !codes.has(c), nullText, (text) => openCell(box, c, text))));
   });
-  const box = Object.assign(document.createElement("div"), { style: "overflow:auto;max-height:var(--queria-table-height,400px)" });
   box.append(table);
   const more = rows.length > limit ? [Object.assign(document.createElement("p"), { textContent: `Showing ${limit.toLocaleString()} of ${rows.length.toLocaleString()} rows`, style: `margin:4px 0 0;font:12px system-ui,sans-serif;${muted}` })] : [];
   el.append(box, ...more);
