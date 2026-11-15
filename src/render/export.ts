@@ -1,5 +1,5 @@
 import type { Dataset } from "../client.js";
-import { chartTheme, fitsPanels, panelFitter, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, withPanelWidth, type ChartSpec, type Rows, type Tone } from "./chart.js";
+import { chartTheme, fitsPanels, panelFitter, fontOf, isComposite, isRows, toneOf, TONES, withData, withHighlight, withPanelWidth, withSignedColors, type ChartSpec, type Rows, type Tone } from "./chart.js";
 import { withAnnotations, type Annotation } from "./annotate.js";
 import { sourcesText } from "./attribution.js";
 import { esc } from "./escape.js";
@@ -71,7 +71,8 @@ export const chartSvg = async (
   { width = 600, height = 315, theme = "light", highlight, annotations = [], sources = [], font = "system-ui, sans-serif", japanese = true, config }: ChartImageOptions = {},
 ): Promise<string> => {
   const [vega, vl, { expressionInterpreter }] = await Promise.all([import("vega"), import("vega-lite"), import("vega-interpreter")]);
-  const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[theme].accent, TONES[theme].base);
+  const signed = withSignedColors(spec, data);
+  const shown = highlight === undefined ? signed : withHighlight(signed, data, [highlight].flat(), TONES[theme].accent, TONES[theme].base);
   const { fg, muted } = TONES[theme];
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const footer = sources.length > 0 ? FOOTER : 0;

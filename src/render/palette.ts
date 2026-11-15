@@ -5,10 +5,16 @@ export const SERIES = ["#3ba3a0", "#e0789b", "#e2a33b", "#5b8def", "#9c6b4e", "#
 /** The color of the categories beyond SERIES, gathered as one. */
 export const OTHER = "#9ca3af";
 /**
- * The ramp for numbers, yellow to green to blue, so that neighboring steps tell apart, also for color vision
- * deficiencies. The purple stays free for highlights. The light end stays visible on a light basemap at 0.6 opacity.
+ * The ramp for amounts, light to dark blue: darker means more. One hue reads without a legend and stays readable for
+ * color vision deficiencies. The purple stays free for highlights. The light end stays visible on a light basemap at
+ * 0.6 opacity.
  */
-export const RAMP = ["#edf8b1", "#a1dab4", "#41b6c4", "#2c7fb8", "#253494"] as const;
+export const RAMP = ["#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c"] as const;
+/**
+ * The ramp for numbers with a sign, such as a change or a net inflow: red below zero, white at zero, blue above.
+ * Red and blue stay apart for color vision deficiencies (red reads as brown).
+ */
+export const DIVERGING = ["#b2182b", "#ef8a62", "#fddbc7", "#f7f7f7", "#d1e5f0", "#67a9cf", "#2166ac"] as const;
 /** The ramp for lines, such as flows: few in gray, many in blue. Thin gray lines stay visible on the basemap. */
 export const LINE_RAMP = ["#c4c4cc", "#a1a1aa", "#41b6c4", "#2c7fb8", "#253494"] as const;
 /** Colors of map layers without a color column, in order, so that layers drawn together tell apart. */

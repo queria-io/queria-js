@@ -1,5 +1,5 @@
 import { type Annotation, withAnnotations } from "./annotate.js";
-import { SERIES } from "./palette.js";
+import { DIVERGING, RAMP, SERIES } from "./palette.js";
 import { type Encoding, isView, keysOf, type View } from "./view.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
@@ -141,7 +141,7 @@ export const chartTheme = (tone: Tone = "light", font = "system-ui, sans-serif",
     background: "transparent",
     font,
     view: { stroke: null },
-    range: { category: SERIES },
+    range: { category: SERIES, ramp: RAMP, heatmap: RAMP, diverging: DIVERGING },
     title: { color: fg, fontSize: 15, fontWeight: 600, anchor: "start", offset: 12 },
     axis: { labelColor: muted, titleColor: muted, titleFontWeight: "normal", labelFontSize: 11, titleFontSize: 11, gridColor: border, domain: false, ticks: false, labelPadding: 6 },
     axisX: { labelAngle: 0 },
@@ -193,6 +193,26 @@ export const toneOf = (color: string): Tone => (isLight(color) ? "dark" : "light
 const markType = (mark: unknown): unknown => (typeof mark === "object" && mark !== null && "type" in mark ? mark.type : mark);
 
 /**
+ * Rewrites the encoding of each view of a single or layered spec with `fn`, which gets the rows the view reads: its
+ * named data, or else the rows of the view around it. Views whose encoding and layers are unchanged are kept as
+ * they are, so a caller can tell whether anything changed.
+ */
+const mapEncodings = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>, fn: (enc: Encoding, rows: Rows, v: View) => Encoding): ChartSpec => {
+  const named = (v: View): Rows | undefined => {
+    const name = isView(v.data) ? v.data.name : undefined;
+    return isRows(data) || typeof name !== "string" ? undefined : data[name];
+  };
+  const paint = (v: View, around: Rows): View => {
+    const rows = named(v) ?? around;
+    const encoding = v.encoding ? fn(v.encoding, rows, v) : v.encoding;
+    const layer = v.layer?.map((l) => paint(l, rows));
+    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
+  };
+  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+};
+
+/**
  * Color the highlighted values purple and the rest gray. With a color field, the series named in values are purple;
  * without one, the marks whose x, y or detail value is in values are (category axes are tried before number axes).
  * Text marks keep their color, and so do colors by a number (a heatmap). Layers are colored one by one, each with
@@ -209,10 +229,6 @@ export const withHighlight = (
   // Compared as text, so "2020" from an HTML attribute matches the number 2020 in the rows.
   const texts = values.map(String);
   const hit = (v: unknown): boolean => keysOf(v).some((k) => texts.includes(k));
-  const named = (v: View): Rows | undefined => {
-    const name = isView(v.data) ? v.data.name : undefined;
-    return isRows(data) || typeof name !== "string" ? undefined : data[name];
-  };
   const color = (enc: Encoding, rows: Rows): Encoding => {
     const field = enc.color?.field;
     if (typeof field === "string") {
@@ -240,14 +256,26 @@ export const withHighlight = (
       },
     };
   };
-  const paint = (v: View, around: Rows): View => {
-    const rows = named(v) ?? around;
-    const encoding = v.encoding && markType(v.mark) !== "text" ? color(v.encoding, rows) : v.encoding;
-    const layer = v.layer?.map((l) => paint(l, rows));
-    const changed = encoding !== v.encoding || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
-    return changed ? { ...v, ...(encoding ? { encoding } : {}), ...(layer ? { layer } : {}) } : v;
+  return mapEncodings(spec, data, (enc, rows, v) => (markType(v.mark) === "text" ? enc : color(enc, rows)));
+};
+
+/**
+ * Color numbers with a sign red to blue around zero: a color by a number whose values are below zero and above,
+ * and whose scale names no scheme, range or domain, takes the diverging range with zero in the middle. Layers are
+ * looked at one by one, with the rows they read, as in withHighlight.
+ */
+export const withSignedColors = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>): ChartSpec => {
+  const color = (enc: Encoding, rows: Rows): Encoding => {
+    const field = enc.color?.field;
+    if (typeof field !== "string" || enc.color?.type !== "quantitative") return enc;
+    const scale = isView(enc.color.scale) ? enc.color.scale : {};
+    if (enc.color.scale === null || ["scheme", "range", "domain", "domainMid"].some((k) => k in scale)) return enc;
+    const nums = rows.map((r) => Number(r[field])).filter(Number.isFinite);
+    return nums.some((n) => n < 0) && nums.some((n) => n > 0)
+      ? { ...enc, color: { ...enc.color, scale: { ...scale, domainMid: 0, range: "diverging" } } }
+      : enc;
   };
-  return isView(spec) ? paint(spec, isRows(data) ? data : Object.values(data).flat()) : spec;
+  return mapEncodings(spec, data, color);
 };
 
 export type ChartOptions = {
@@ -314,7 +342,8 @@ export const renderChart = async (
   const style = getComputedStyle(el);
   const tone = theme ?? toneOf(style.color);
   const { embed, expressionInterpreter } = await loadDrawer();
-  const shown = highlight === undefined ? spec : withHighlight(spec, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
+  const signed = withSignedColors(spec, data);
+  const shown = highlight === undefined ? signed : withHighlight(signed, data, [highlight].flat(), TONES[tone].accent, TONES[tone].base);
   const { fg, muted } = TONES[tone];
   const noted = withAnnotations(shown, isRows(data) ? data : Object.values(data).flat(), annotations, { text: fg, line: muted });
   const { view, finalize } = await embed(el, withData(fitsPanels(spec) ? withPanelWidth(noted.spec) : noted.spec, data) as VisualizationSpec, {
@@ -329,7 +358,7 @@ export const renderChart = async (
     tooltip: { theme: tone },
   });
   // Whether a highlighted value was found, and how many notes were drawn. Values that are not found are left out
-  const result = { view, highlighted: shown !== spec, annotated: noted.added };
+  const result = { view, highlighted: shown !== signed, annotated: noted.added };
   if (!fitsPanels(spec)) return { ...result, finalize };
   // Panels are sized to the element as width "container" sizes a single view, again when the element is resized.
   const fitTo = panelFitter(view);

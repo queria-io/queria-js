@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitsPanels, fontOf, toneOf, withData, withHighlight, withPanelWidth } from "./chart.js";
+import { fitsPanels, fontOf, toneOf, withData, withHighlight, withPanelWidth, withSignedColors } from "./chart.js";
 
 describe("withData", () => {
   it("puts rows into a spec without data", () => {
@@ -68,6 +68,18 @@ describe("fontOf", () => {
     expect(fontOf('"Times New Roman"')).toBeUndefined();
     expect(fontOf("")).toBeUndefined();
     expect(fontOf("-webkit-standard")).toBeUndefined();
+  });
+});
+
+describe("withSignedColors", () => {
+  const heat = { mark: "rect", encoding: { color: { field: "v", type: "quantitative" } } };
+  it("colors numbers below and above zero red to blue around zero", () => {
+    expect(withSignedColors(heat, [{ v: -1 }, { v: 2 }])).toMatchObject({ encoding: { color: { scale: { domainMid: 0, range: "diverging" } } } });
+  });
+  it("leaves numbers of one sign and the author's own colors as they are", () => {
+    expect(withSignedColors(heat, [{ v: 1 }, { v: 2 }])).toBe(heat);
+    const own = { ...heat, encoding: { color: { ...heat.encoding.color, scale: { scheme: "blues" } } } };
+    expect(withSignedColors(own, [{ v: -1 }, { v: 2 }])).toBe(own);
   });
 });
 
