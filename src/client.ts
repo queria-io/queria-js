@@ -85,7 +85,7 @@ const bearer = (token: string | null): RequestInit | undefined =>
 
 /** Parquet files are read from data/ next to the metadata: .../metadata.db → .../data/ */
 export const dataPath = (catalogUrl: string): string => {
-  const url = catalogUrl.split("?")[0]!;
+  const url = catalogUrl.replace(/\?.*$/, "");
   return `${url.slice(0, url.lastIndexOf("/") + 1)}data/`;
 };
 
