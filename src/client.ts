@@ -83,8 +83,11 @@ export const lookup = async (api: string, qualified: string, token: string | nul
 const bearer = (token: string | null): RequestInit | undefined =>
   token === null ? undefined : { headers: { Authorization: `Bearer ${token}` } };
 
-/** Parquet files sit next to the catalog: .../ducklake.duckdb → .../ducklake.duckdb.files/ */
-export const dataPath = (catalogUrl: string): string => `${catalogUrl.split("?")[0]}.files/`;
+/** Parquet files are read from data/ next to the metadata: .../metadata.db → .../data/ */
+export const dataPath = (catalogUrl: string): string => {
+  const url = catalogUrl.split("?")[0]!;
+  return `${url.slice(0, url.lastIndexOf("/") + 1)}data/`;
+};
 
 /**
  * Attach one dataset. The catalog is fetched in a single GET: letting DuckDB read it by range
