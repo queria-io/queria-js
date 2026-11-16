@@ -34,9 +34,32 @@ describe("withinDomain", () => {
   it("clamps bars to the domain instead of clipping them", () => {
     expect(withinDomain({ mark: "bar", encoding: { x: axis } })).toEqual({ mark: "bar", encoding: { x: clamped } });
   });
-  it("looks at the domain of the view around a layer", () => {
+  it("looks at the domain of the view around a layer, and keeps labels of bars clamped to it", () => {
     const spec = { encoding: { y: axis }, layer: [{ mark: { type: "bar" } }, { mark: "text", encoding: { y: { field: "v" } } }] };
-    expect(withinDomain(spec)).toMatchObject({ layer: [{ mark: { type: "bar" }, encoding: { y: clamped } }, { mark: { type: "text", clip: true } }] });
+    expect(withinDomain(spec)).toMatchObject({ layer: [{ mark: { type: "bar" }, encoding: { y: clamped } }, { mark: "text" }] });
+  });
+  it("takes a domain written in one layer for all of them, as they share the scale", () => {
+    const spec = { layer: [{ mark: "point", encoding: { y: axis } }, { mark: "rule", encoding: { y: { datum: 20 } } }] };
+    expect(withinDomain(spec)).toMatchObject({ layer: [{ mark: { type: "point", clip: true } }, { mark: { type: "rule", clip: true } }] });
+  });
+  it("reads domainMin and domainMax as ends of the domain", () => {
+    const from = { field: "v", type: "quantitative", scale: { domainMin: 50 } };
+    expect(withinDomain({ mark: "bar", encoding: { y: from } })).toEqual({ mark: "bar", encoding: { y: { ...from, scale: { domainMin: 50, clamp: true } } } });
+  });
+  it("clamps bars only along the channel they run along", () => {
+    const years = { field: "t", type: "temporal", scale: { domain: [2020, 2024] } };
+    const spec = { mark: "bar", encoding: { x: years, y: { field: "v", type: "quantitative" } } };
+    expect(withinDomain(spec)).toBe(spec);
+  });
+  it("keeps marks on a scale of categories, whose domain only orders them", () => {
+    const spec = { mark: "line", encoding: { x: { field: "a", type: "nominal", scale: { domain: ["b", "a"] } }, y: { field: "v", type: "quantitative" } } };
+    expect(withinDomain(spec)).toBe(spec);
+  });
+  it("looks into the panel of a facet", () => {
+    expect(withinDomain({ facet: { field: "f" }, spec: { mark: "point", encoding: { x: axis } } })).toEqual({
+      facet: { field: "f" },
+      spec: { mark: { type: "point", clip: true }, encoding: { x: axis } },
+    });
   });
   it("keeps the spec as it is without a domain, or when it says whether to clip and clamp", () => {
     const free = { mark: "bar", encoding: { x: { field: "v", scale: { zero: false } } } };
