@@ -83,10 +83,10 @@ export const lookup = async (api: string, qualified: string, token: string | nul
 const bearer = (token: string | null): RequestInit | undefined =>
   token === null ? undefined : { headers: { Authorization: `Bearer ${token}` } };
 
-/** Parquet files are read from data/ next to the metadata: .../metadata.db → .../data/ */
+/** Parquet files are read from tables/ next to the metadata: .../metadata.db → .../tables/ */
 export const dataPath = (catalogUrl: string): string => {
   const url = catalogUrl.replace(/\?.*$/, "");
-  return `${url.slice(0, url.lastIndexOf("/") + 1)}data/`;
+  return `${url.slice(0, url.lastIndexOf("/") + 1)}tables/`;
 };
 
 /**

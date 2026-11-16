@@ -28,8 +28,8 @@ describe("parseDatasets", () => {
 
 describe("dataPath", () => {
   it("drops the version and points at data/ next to the metadata", () => {
-    expect(dataPath("https://data.queria.io/d/k/metadata.db?v=1")).toBe("https://data.queria.io/d/k/data/");
-    expect(dataPath("https://data.queria.io/d/k/ducklake.duckdb")).toBe("https://data.queria.io/d/k/data/");
+    expect(dataPath("https://data.queria.io/d/k/metadata.db?v=1")).toBe("https://data.queria.io/d/k/tables/");
+    expect(dataPath("https://data.queria.io/d/k/ducklake.duckdb")).toBe("https://data.queria.io/d/k/tables/");
   });
 });
 
