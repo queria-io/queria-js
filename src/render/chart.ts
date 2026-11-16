@@ -93,9 +93,49 @@ const ownDatasets = (spec: ChartSpec): object => {
   return typeof d === "object" && d !== null ? d : {};
 };
 
+const hasDomain = (channel: unknown): boolean => isView(channel) && isView(channel.scale) && Array.isArray(channel.scale.domain);
+
+/**
+ * Keep the marks of each view whose x or y scale has a domain written in the spec inside the plot, unless the spec
+ * says otherwise. Vega-Lite draws marks outside such a domain beyond the plot, such as bars from zero on an axis from
+ * 50, and a chart sized to its container then shrinks the plot until those marks fit, down to no width at all.
+ * Bars are clamped to the domain, and other marks are clipped. Bars are not clipped: Vega-Lite puts stacked bars with
+ * rounded ends in groups of no width, and a clipped bar in one is not drawn at all.
+ */
+export const withinDomain = (spec: ChartSpec): ChartSpec => {
+  const clip = (v: View, around: Encoding): View => {
+    // Layers share their x and y scales, so a layer's own x or y keeps the scale of the view around it.
+    const axis = (c: string): Encoding => (around[c] || v.encoding?.[c] ? { [c]: { ...around[c], ...v.encoding?.[c] } } : {});
+    const encoding = { ...around, ...v.encoding, ...axis("x"), ...axis("y") };
+    const fixed = ["x", "y"].filter((c) => hasDomain(encoding[c]));
+    const mark = v.mark;
+    const bar = markType(mark) === "bar";
+    const clipped =
+      mark !== undefined && !bar && fixed.length && !(isView(mark) && "clip" in mark) ? { ...(isView(mark) ? mark : { type: mark }), clip: true } : mark;
+    const clamped = Object.fromEntries(
+      (bar ? fixed : []).flatMap((c) => {
+        const channel = encoding[c];
+        return isView(channel) && isView(channel.scale) && !("clamp" in channel.scale) ? [[c, { ...channel, scale: { ...channel.scale, clamp: true } }]] : [];
+      }),
+    );
+    const layer = v.layer?.map((l) => clip(l, encoding));
+    const changed = clipped !== mark || Object.keys(clamped).length > 0 || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed
+      ? {
+          ...v,
+          ...(clipped === undefined ? {} : { mark: clipped }),
+          ...(Object.keys(clamped).length ? { encoding: { ...v.encoding, ...clamped } } : {}),
+          ...(layer ? { layer } : {}),
+        }
+      : v;
+  };
+  return isView(spec) ? clip(spec, {}) : spec;
+};
+
 /**
  * Put the data into the spec. With rows, they become the data of a spec that has none.
  * With named rows, the spec (or its layers) picks them with data: { name }; rows named "" are the default data.
+ * Marks are kept inside a domain written in the spec (see withinDomain).
  */
 export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>): Record<string, unknown> => {
   const named = isRows(data) ? { "": data } : data;
@@ -103,7 +143,7 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
   return {
     ...(isComposite(spec) ? {} : { width: "container" }),
-    ...spec,
+    ...withinDomain(spec),
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
     // The spec's own datasets stay; named rows are laid over them.
     ...(Object.keys(rest).length

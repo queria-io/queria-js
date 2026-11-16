@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitsPanels, fontOf, toneOf, withData, withHighlight, withPanelWidth, withSignedColors } from "./chart.js";
+import { fitsPanels, fontOf, toneOf, withData, withHighlight, withinDomain, withPanelWidth, withSignedColors } from "./chart.js";
 
 describe("withData", () => {
   it("puts rows into a spec without data", () => {
@@ -22,6 +22,27 @@ describe("withData", () => {
   });
   it("leaves the panels of a facet at the size Vega-Lite gives them", () => {
     expect(withData({ mark: "bar", encoding: { column: { field: "c" } } }, [])).not.toHaveProperty("width");
+  });
+});
+
+describe("withinDomain", () => {
+  const axis = { field: "v", type: "quantitative", scale: { domain: [50, 100] } };
+  const clamped = { ...axis, scale: { domain: [50, 100], clamp: true } };
+  it("clips the marks of a view with a domain on x or y", () => {
+    expect(withinDomain({ mark: "point", encoding: { x: axis } })).toEqual({ mark: { type: "point", clip: true }, encoding: { x: axis } });
+  });
+  it("clamps bars to the domain instead of clipping them", () => {
+    expect(withinDomain({ mark: "bar", encoding: { x: axis } })).toEqual({ mark: "bar", encoding: { x: clamped } });
+  });
+  it("looks at the domain of the view around a layer", () => {
+    const spec = { encoding: { y: axis }, layer: [{ mark: { type: "bar" } }, { mark: "text", encoding: { y: { field: "v" } } }] };
+    expect(withinDomain(spec)).toMatchObject({ layer: [{ mark: { type: "bar" }, encoding: { y: clamped } }, { mark: { type: "text", clip: true } }] });
+  });
+  it("keeps the spec as it is without a domain, or when it says whether to clip and clamp", () => {
+    const free = { mark: "bar", encoding: { x: { field: "v", scale: { zero: false } } } };
+    const own = { mark: { type: "bar", clip: false }, encoding: { x: { ...axis, scale: { domain: [50, 100], clamp: false } } } };
+    expect(withinDomain(free)).toBe(free);
+    expect(withinDomain(own)).toBe(own);
   });
 });
 
