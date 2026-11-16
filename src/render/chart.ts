@@ -1,6 +1,6 @@
 import { type Annotation, withAnnotations } from "./annotate.js";
 import { DIVERGING, RAMP, SERIES } from "./palette.js";
-import { type Encoding, isView, keysOf, type View } from "./view.js";
+import { type Channel, type Encoding, isView, keysOf, type View } from "./view.js";
 import type { EmbedOptions, Result, VisualizationSpec } from "vega-embed";
 
 /** A Vega-Lite spec. Its data is put in by the package. */
@@ -93,9 +93,93 @@ const ownDatasets = (spec: ChartSpec): object => {
   return typeof d === "object" && d !== null ? d : {};
 };
 
+const AXES = ["x", "y"];
+const CONTINUOUS = ["linear", "log", "pow", "sqrt", "symlog", "time", "utc"];
+
+// Whether the channel places marks on a scale of numbers or dates. A domain on a scale of categories only orders
+// them, and no mark is drawn outside it.
+const isContinuous = (c: unknown): c is Channel => {
+  if (!isView(c)) return false;
+  const type = isView(c.scale) ? c.scale.type : undefined;
+  if (typeof type === "string") return CONTINUOUS.includes(type);
+  return c.type === "quantitative" || c.type === "temporal" || (c.type === undefined && (c.aggregate !== undefined || typeof c.datum === "number"));
+};
+
+// Whether the ends of the channel's scale are written in the spec: a domain, or its lower or upper end.
+const hasDomain = (c: unknown): boolean =>
+  isContinuous(c) && isView(c.scale) && (Array.isArray(c.scale.domain) || "domainMin" in c.scale || "domainMax" in c.scale);
+
+// A number a bar can run along: not a date, a bin or a time unit, which place bars side by side.
+const isMeasure = (c: unknown): c is Channel => isContinuous(c) && c.type !== "temporal" && !c.bin && !c.timeUnit;
+
+// The channel a bar runs along, as Vega-Lite orients bars: x when only x is a measure or only x is aggregated, else y.
+const lengthOf = ({ x, y }: Encoding): "x" | "y" => (isMeasure(x) && (!isMeasure(y) || (x.aggregate !== undefined && y.aggregate === undefined)) ? "x" : "y");
+
+// A layer's own x or y is laid over that of the view around it, channel by channel, as Vega-Lite does.
+const axesOf = (v: View, around: Encoding): Encoding => {
+  const axis = (c: string): Encoding => (around[c] || v.encoding?.[c] ? { [c]: { ...around[c], ...v.encoding?.[c] } } : {});
+  return { ...around, ...v.encoding, ...axis("x"), ...axis("y") };
+};
+
+/**
+ * Keep the marks of a view whose x or y scale has its ends written in the spec (a domain, domainMin or domainMax)
+ * inside the plot, unless the spec says otherwise. Vega-Lite draws marks outside such a domain beyond the plot, such
+ * as bars from zero on an axis from 50, and a chart sized to its container then shrinks the plot until those marks
+ * fit, down to no width at all.
+ * Layers share their x and y scales, so a domain written in one layer holds for all of them. Bars are clamped to the
+ * domain along the channel they run along; clamping them across it would pile bars outside the domain at its end.
+ * Bars are not clipped: Vega-Lite puts stacked bars with rounded ends in groups of no width, and a clipped bar in one
+ * is not drawn at all. The other marks are clipped, unless bars have clamped every scale with a domain: then they are
+ * inside it already, and labels beside the marks at its ends are kept.
+ */
+export const withinDomain = (spec: ChartSpec): ChartSpec => {
+  if (!isView(spec)) return spec;
+  // The panels of a facet are sized to the container too (see panelFitter).
+  if ("facet" in spec && isView(spec.spec)) {
+    const panel = withinDomain(spec.spec);
+    return panel === spec.spec ? spec : { ...spec, spec: panel };
+  }
+  const fixed = new Set<string>();
+  const clamped = new Set<string>();
+  const scan = (v: View, around: Encoding): void => {
+    const enc = axesOf(v, around);
+    for (const c of AXES) {
+      const scale = enc[c]?.scale;
+      if (hasDomain(enc[c])) fixed.add(c);
+      if (isView(scale) && scale.clamp === true) clamped.add(c);
+    }
+    const c = lengthOf(enc);
+    const scale = enc[c]?.scale;
+    if (markType(v.mark) === "bar" && isContinuous(enc[c]) && !(isView(scale) && "clamp" in scale)) clamped.add(c);
+    for (const l of v.layer ?? []) scan(l, enc);
+  };
+  scan(spec, {});
+  if (fixed.size === 0) return spec;
+  const clips = [...fixed].some((c) => !clamped.has(c));
+  const keep = (v: View, around: Encoding): View => {
+    const enc = axesOf(v, around);
+    const mark = v.mark;
+    const bar = markType(mark) === "bar";
+    const c = lengthOf(enc);
+    const length = enc[c];
+    const clamp =
+      bar && fixed.has(c) && isContinuous(length) && !(isView(length.scale) && "clamp" in length.scale)
+        ? { [c]: { ...length, scale: { ...(isView(length.scale) ? length.scale : {}), clamp: true } } }
+        : undefined;
+    const clip = mark !== undefined && !bar && clips && !(isView(mark) && "clip" in mark) ? { ...(isView(mark) ? mark : { type: mark }), clip: true } : undefined;
+    const layer = v.layer?.map((l) => keep(l, enc));
+    const changed = clip !== undefined || clamp !== undefined || (layer?.some((l, i) => l !== v.layer?.[i]) ?? false);
+    return changed
+      ? { ...v, ...(clip ? { mark: clip } : {}), ...(clamp ? { encoding: { ...v.encoding, ...clamp } } : {}), ...(layer ? { layer } : {}) }
+      : v;
+  };
+  return keep(spec, {});
+};
+
 /**
  * Put the data into the spec. With rows, they become the data of a spec that has none.
  * With named rows, the spec (or its layers) picks them with data: { name }; rows named "" are the default data.
+ * Marks are kept inside a domain written in the spec (see withinDomain).
  */
 export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, Rows>>): Record<string, unknown> => {
   const named = isRows(data) ? { "": data } : data;
@@ -103,7 +187,7 @@ export const withData = (spec: ChartSpec, data: Rows | Readonly<Record<string, R
   // Vega-Lite takes width "container" only for single and layered views, and warns on the others.
   return {
     ...(isComposite(spec) ? {} : { width: "container" }),
-    ...spec,
+    ...withinDomain(spec),
     ...(main && !("data" in spec) ? { data: { values: copy(main) } } : {}),
     // The spec's own datasets stay; named rows are laid over them.
     ...(Object.keys(rest).length
