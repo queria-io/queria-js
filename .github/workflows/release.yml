@@ -3,9 +3,10 @@ name: Release
 # Every push to main is checked, and published when its commits call for a
 # release: semantic-release reads the Conventional Commits since the last tag
 # (fix -> patch, feat -> minor, a breaking change -> minor), tags it, makes a
-# GitHub release, and the last step publishes that version to npm. npm
-# authorizes this workflow by trusted publishing (OIDC), so no token is stored
-# here.
+# GitHub release, and the last step stages that version on npm. A staged
+# version goes live only after a maintainer approves it on npmjs.com (or with
+# `npm stage approve`) with 2FA. npm authorizes this workflow by trusted
+# publishing (OIDC), so no token is stored here.
 
 on:
   push:
@@ -43,11 +44,12 @@ jobs:
       - run: npx --yes -p semantic-release@25.0.9 -p conventional-changelog-conventionalcommits@9.3.1 semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish to npm
+      # Stage the release on npm. It goes live only after a maintainer approves it on npmjs.com with 2FA
+      - name: Stage on npm
         run: |
           version=$(node -p "require('./package.json').version")
           if [ "$version" = "0.0.0-semantic-release" ]; then
             echo "No new release"
             exit 0
           fi
-          npx --yes npm@12.2.2 publish
+          npx --yes npm@12.2.2 stage publish
