@@ -88,11 +88,17 @@ const header = (text: string, right: boolean, cells: () => HTMLElement[]): HTMLE
     style: "position:absolute;top:0;right:0;bottom:0;width:6px;cursor:col-resize;touch-action:none",
   });
   handle.onpointerdown = (e) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     const start = e.clientX - th.getBoundingClientRect().width;
+    // The column's cells are looked up once per drag, not on every move.
+    const column = [th, ...cells()];
     handle.setPointerCapture(e.pointerId);
-    handle.onpointermove = (m) => setWidth([th, ...cells()], Math.max(MIN_WIDTH, m.clientX - start));
-    handle.onpointerup = () => {
+    handle.onpointermove = (m) => {
+      if (m.pointerId === e.pointerId) setWidth(column, Math.max(MIN_WIDTH, m.clientX - start));
+    };
+    // The capture ends on pointerup and on pointercancel alike, so the drag ends with it.
+    handle.onlostpointercapture = () => {
       handle.onpointermove = null;
     };
   };
@@ -102,7 +108,7 @@ const header = (text: string, right: boolean, cells: () => HTMLElement[]): HTMLE
 };
 
 const link = (url: string): HTMLElement =>
-  Object.assign(document.createElement("a"), { href: url, textContent: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
+  Object.assign(document.createElement("a"), { href: url, textContent: url, title: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
 
 // The outline of the selected cell and the border of its popover.
 const SELECTED = "var(--queria-table-selected,Highlight)";
@@ -179,7 +185,7 @@ const cellPopover = (lang: string | null | undefined, onClose: () => void) => {
 const copyText = (v: unknown): string => (isNumber(v) ? String(v) : cellText(v, false));
 
 // Every value stays on one line. Text longer than --queria-table-cell-width ends with an ellipsis; a click on the cell
-// shows it in full.
+// shows it in full, and a link shows its full address on hover.
 const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): HTMLElement => {
   const isNull = v === null || v === undefined;
   const text = isNull ? nullText : cellText(v, grouping);
@@ -197,9 +203,10 @@ const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): 
  * Draw rows as a table. Number columns are aligned right, with every decimal digit kept. Integers are grouped from
  * 10,000, except in columns named as codes, IDs or dates (isCodeColumn). Values come from the data, so they are set as text;
  * http and https addresses become links that open in a new tab. Every value stays on one line; text longer than
- * --queria-table-cell-width (24em by default) ends with an ellipsis. Dragging the right edge of a header changes the
- * width of its column, and a double click there returns it. Every other row is shaded. The height is the CSS variable --queria-table-height (400px by
- * default); it scrolls beyond, with the header kept in view. A click on a cell outlines it and shows its column name and
+ * --queria-table-cell-width (24em by default) ends with an ellipsis, and a link shows its full address on hover.
+ * Dragging the right edge of a header changes the width of its column, and a double click there returns it. Every other
+ * row is shaded. The height is the CSS variable --queria-table-height (400px by default); it scrolls beyond, with the
+ * header kept in view. A click on a cell outlines it and shows its column name and
  * full value in a popover beside it (below it where the right side has no room), with a button that copies the value
  * (numbers as JavaScript writes them); the labels are Japanese under a page or element whose lang is ja, English otherwise.
  * --queria-table-selected is the outline of the selected cell. The colors follow the page; --queria-table-border,
