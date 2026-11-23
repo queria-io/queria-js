@@ -66,14 +66,49 @@ const stripe = "background:var(--queria-table-stripe,color-mix(in srgb,currentCo
 /** Whether a value is a web address that a cell shows as a link: http or https, with no spaces. */
 export const isLink = (v: unknown): v is string => typeof v === "string" && /^https?:\/\/\S+$/i.test(v);
 
-const header = (text: string, right: boolean): HTMLElement =>
-  Object.assign(document.createElement("th"), {
-    textContent: text,
-    style: `position:sticky;top:0;z-index:1;${pad};${border};white-space:nowrap;vertical-align:bottom;font-weight:600;background:var(--queria-table-header-background,Canvas);text-align:${right ? "right" : "left"}`,
+// The narrowest a column can be dragged to.
+const MIN_WIDTH = 48;
+
+// Sets the width of a column's cells, or clears it with null so the column takes its own width again.
+const setWidth = (cells: HTMLElement[], width: number | null) =>
+  cells.forEach((c) => {
+    const w = width === null ? "" : `${width}px`;
+    Object.assign(c.style, { width: w, minWidth: w, maxWidth: width === null ? (c.dataset.maxWidth ?? "") : w });
   });
 
+// A header cell with a handle on its right edge. Dragging the handle sets the width of the column; a double click
+// returns it to its own width.
+const header = (text: string, right: boolean, cells: () => HTMLElement[]): HTMLElement => {
+  const th = Object.assign(document.createElement("th"), {
+    textContent: text,
+    title: text,
+    style: `position:sticky;top:0;z-index:1;box-sizing:border-box;${pad};${border};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;font-weight:600;background:var(--queria-table-header-background,Canvas);text-align:${right ? "right" : "left"}`,
+  });
+  const handle = Object.assign(document.createElement("div"), {
+    style: "position:absolute;top:0;right:0;bottom:0;width:6px;cursor:col-resize;touch-action:none",
+  });
+  handle.onpointerdown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const start = e.clientX - th.getBoundingClientRect().width;
+    // The column's cells are looked up once per drag, not on every move.
+    const column = [th, ...cells()];
+    handle.setPointerCapture(e.pointerId);
+    handle.onpointermove = (m) => {
+      if (m.pointerId === e.pointerId) setWidth(column, Math.max(MIN_WIDTH, m.clientX - start));
+    };
+    // The capture ends on pointerup and on pointercancel alike, so the drag ends with it.
+    handle.onlostpointercapture = () => {
+      handle.onpointermove = null;
+    };
+  };
+  handle.ondblclick = () => setWidth([th, ...cells()], null);
+  th.append(handle);
+  return th;
+};
+
 const link = (url: string): HTMLElement =>
-  Object.assign(document.createElement("a"), { href: url, textContent: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
+  Object.assign(document.createElement("a"), { href: url, textContent: url, title: url, target: "_blank", rel: "noopener noreferrer", style: "color:var(--queria-table-link,LinkText)" });
 
 // The outline of the selected cell and the border of its popover.
 const SELECTED = "var(--queria-table-selected,Highlight)";
@@ -149,19 +184,16 @@ const cellPopover = (lang: string | null | undefined, onClose: () => void) => {
 // decimal sign, so they paste back as numbers.
 const copyText = (v: unknown): string => (isNumber(v) ? String(v) : cellText(v, false));
 
-// A long text keeps its column at least this wide, so a narrow page scrolls sideways instead of making it a tall strip.
-const LONG_TEXT = 16;
-
-// Numbers stay on one line. Text wraps at --queria-table-cell-width, so every value is shown in full.
+// Every value stays on one line. Text longer than --queria-table-cell-width ends with an ellipsis; a click on the cell
+// shows it in full, and a link shows its full address on hover.
 const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): HTMLElement => {
   const isNull = v === null || v === undefined;
   const text = isNull ? nullText : cellText(v, grouping);
-  const align = right
-    ? "white-space:nowrap;text-align:right"
-    : `white-space:pre-wrap;overflow-wrap:anywhere;max-width:var(--queria-table-cell-width,24em);text-align:left${text.length > LONG_TEXT ? ";min-width:min(16em,var(--queria-table-cell-width,24em))" : ""}`;
+  const maxWidth = right ? "" : "var(--queria-table-cell-width,24em)";
   const td = Object.assign(document.createElement("td"), {
-    style: `${pad};${border};vertical-align:top;${align}${isNull ? `;${muted}` : ";cursor:pointer"}`,
+    style: `box-sizing:border-box;${pad};${border};vertical-align:top;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:${right ? "right" : "left"}${maxWidth ? `;max-width:${maxWidth}` : ""}${isNull ? `;${muted}` : ";cursor:pointer"}`,
   });
+  td.dataset.maxWidth = maxWidth;
   if (isLink(v)) td.append(link(v));
   else td.textContent = text;
   return td;
@@ -170,9 +202,11 @@ const cell = (v: unknown, right: boolean, grouping: boolean, nullText: string): 
 /**
  * Draw rows as a table. Number columns are aligned right, with every decimal digit kept. Integers are grouped from
  * 10,000, except in columns named as codes, IDs or dates (isCodeColumn). Values come from the data, so they are set as text;
- * http and https addresses become links that open in a new tab. Text wraps at --queria-table-cell-width (24em by
- * default) and is never cut. Every other row is shaded. The height is the CSS variable --queria-table-height (400px by
- * default); it scrolls beyond, with the header kept in view. A click on a cell outlines it and shows its column name and
+ * http and https addresses become links that open in a new tab. Every value stays on one line; text longer than
+ * --queria-table-cell-width (24em by default) ends with an ellipsis, and a link shows its full address on hover.
+ * Dragging the right edge of a header changes the width of its column, and a double click there returns it. Every other
+ * row is shaded. The height is the CSS variable --queria-table-height (400px by default); it scrolls beyond, with the
+ * header kept in view. A click on a cell outlines it and shows its column name and
  * full value in a popover beside it (below it where the right side has no room), with a button that copies the value
  * (numbers as JavaScript writes them); the labels are Japanese under a page or element whose lang is ja, English otherwise.
  * --queria-table-selected is the outline of the selected cell. The colors follow the page; --queria-table-border,
@@ -191,8 +225,9 @@ export const renderTable = (
     style: "border-collapse:separate;border-spacing:0;font:var(--queria-table-font,14px/1.5 system-ui,sans-serif)",
   });
   const head = table.createTHead().insertRow();
-  columns.forEach((c) => head.append(header(c, numeric.has(c))));
   const body = table.createTBody();
+  const columnCells = (i: number) => [...body.rows].map((tr) => tr.cells[i]).filter((td) => td !== undefined);
+  columns.forEach((c, i) => head.append(header(c, numeric.has(c), () => columnCells(i))));
   rows.slice(0, limit).forEach((r, i) => {
     const tr = body.insertRow();
     if (i % 2 === 1) tr.style.cssText = stripe;
