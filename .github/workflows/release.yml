@@ -1,10 +1,24 @@
 name: Release
 
+# Every push to main is checked, and released when its commits call for a
+# release: semantic-release reads the Conventional Commits since the last tag
+# (fix -> patch, feat -> minor, a breaking change -> minor), tags it, makes a
+# GitHub release, and the last step stages that version on npm. A staged
+# version goes live only after a maintainer approves it on npmjs.com (or with
+# `npm stage approve`) with 2FA. npm authorizes this workflow by trusted
+# publishing (OIDC), so no token is stored here.
+
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
