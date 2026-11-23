@@ -1,6 +1,6 @@
 name: Release
 
-# Every push to main is checked, and published when its commits call for a
+# Every push to main is checked, and released when its commits call for a
 # release: semantic-release reads the Conventional Commits since the last tag
 # (fix -> patch, feat -> minor, a breaking change -> minor), tags it, makes a
 # GitHub release, and the last step stages that version on npm. A staged
