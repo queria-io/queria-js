@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, connect, hints, rootOf, lookup, parseDatasets, shareLink, sharePayload } from "./client.js";
+import { aliases, connect, hints, outsideDataPathSql, rootOf, lookup, parseDatasets, shareLink, sharePayload } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -124,4 +124,14 @@ describe("shareLink", () => {
       params: [],
       blocks: [{ id: "b1", type: "query", sql: "SELECT 1", chart: { mark: "bar", title: "人口", data: { name: "result" } } }],
     }));
+});
+
+describe("outsideDataPathSql", () => {
+  it("counts absolute paths and paths that climb out, in data and delete files", () => {
+    const sql = outsideDataPathSql("e_stat");
+    expect(sql).toContain(`"__ducklake_metadata_e_stat".ducklake_data_file`);
+    expect(sql).toContain(`"__ducklake_metadata_e_stat".ducklake_delete_file`);
+    expect(sql).toContain("NOT path_is_relative");
+    expect(sql).toContain("'%/../%'");
+  });
 });

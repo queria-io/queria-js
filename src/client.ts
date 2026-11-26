@@ -95,6 +95,35 @@ export const rootOf = (catalogUrl: string): string => {
 const versionOf = (catalogUrl: string): string | undefined => new URL(catalogUrl).searchParams.get("v") ?? undefined;
 
 /**
+ * The last attach started on each DuckDB. Two datasets read in one query can read the same dataset in
+ * their views, so attaches run one after another: otherwise both find it missing and the second ATTACH fails.
+ */
+const attaching = new WeakMap<AsyncDuckDB, Promise<unknown>>();
+
+/** The version each name was attached at by `attach`, on each DuckDB. SQL cannot tell two versions under one name apart. */
+const attachedAt = new WeakMap<AsyncDuckDB, Map<string, string>>();
+
+/** Hex sha256 of the bytes, or null where the page has no crypto.subtle (a plain http page) */
+const sha256Of = async (bytes: ArrayBuffer): Promise<string | null> => {
+  if (!globalThis.crypto?.subtle) return null;
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+/**
+ * Counts the files an attached DuckLake names outside its data path: an absolute path, or one that climbs
+ * out with `..`. Such a metadata could make DuckDB read another dataset's files with this page's token.
+ */
+export const outsideDataPathSql = (name: string): string => {
+  const meta = `"__ducklake_metadata_${name.replaceAll('"', '""')}"`;
+  return (
+    `SELECT count(*) AS n FROM (SELECT path, path_is_relative FROM ${meta}.ducklake_data_file ` +
+    `UNION ALL SELECT path, path_is_relative FROM ${meta}.ducklake_delete_file) ` +
+    `WHERE NOT path_is_relative OR path LIKE '../%' OR path LIKE '%/../%'`
+  );
+};
+
+/**
  * Attach a dataset, and before it the datasets its views read, at the versions its tables.json pins
  * (@queria-io/fdl-js/duckdb). Each catalog is fetched in a single GET: letting DuckDB read it by range
  * costs hundreds of 16 KiB round trips for large catalogs. Data files are still read by range.
@@ -109,21 +138,43 @@ const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string 
   const plan = await planAttach((url) => httpStore(url, { headers: auth(url) }), {
     [alias]: { url: root, ...(version !== undefined && { version }) },
   });
-  const conn = await db.connect();
-  try {
-    for (const a of plan) {
-      const found = await conn.query(`SELECT 1 FROM duckdb_databases() WHERE database_name = ${lit(a.name)}`);
-      if (found.numRows > 0) continue;
-      const res = await fetchFrom(a.metadata, { headers: auth(a.metadata) });
-      if (!res.ok) throw new Error(`${a.metadata}: ${res.status}`);
-      // One file per name: one dataset can be attached under two names, and DuckDB refuses to attach one path twice.
-      const file = `${a.name}.duckdb`;
-      await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
-      await conn.query(attachSql({ ...a, metadata: file }));
+  const run = async (): Promise<void> => {
+    const conn = await db.connect();
+    const versions = attachedAt.get(db) ?? new Map<string, string>();
+    attachedAt.set(db, versions);
+    try {
+      for (const a of plan) {
+        const found = await conn.query(`SELECT 1 FROM duckdb_databases() WHERE database_name = ${lit(a.name)}`);
+        if (found.numRows > 0) {
+          const held = versions.get(a.name);
+          if (held !== undefined && held !== a.version)
+            throw new Error(`${a.name} is attached at ${held}, and ${alias} reads it at ${a.version}`);
+          continue;
+        }
+        const res = await fetchFrom(a.metadata, { headers: auth(a.metadata) });
+        if (!res.ok) throw new Error(`${a.metadata}: ${res.status}`);
+        const buffer = await res.arrayBuffer();
+        const sha256 = a.sha256 === undefined ? null : await sha256Of(buffer);
+        if (sha256 !== null && sha256 !== a.sha256) throw new Error(`${a.metadata}: sha256 is not the one its version.json records`);
+        // One file per name: one dataset can be attached under two names, and DuckDB refuses to attach one path twice.
+        const file = `${a.name}.duckdb`;
+        await db.registerFileBuffer(file, new Uint8Array(buffer));
+        await conn.query(attachSql({ ...a, metadata: file }));
+        // Checked before any query reads its data
+        const outside = Number((await conn.query(outsideDataPathSql(a.name))).toArray()[0]?.n ?? 0);
+        if (outside > 0) {
+          await conn.query(`DETACH "${a.name.replaceAll(`"`, `""`)}"`);
+          throw new Error(`${a.name}: its metadata names ${outside} files outside its data path`);
+        }
+        versions.set(a.name, a.version);
+      }
+    } finally {
+      await conn.close();
     }
-  } finally {
-    await conn.close();
-  }
+  };
+  const done = (attaching.get(db) ?? Promise.resolve()).then(run);
+  attaching.set(db, done.catch(() => undefined));
+  await done;
 };
 
 /** Arrow's type id of DECIMAL. */
