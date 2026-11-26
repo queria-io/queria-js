@@ -2,6 +2,8 @@ import type { AsyncDuckDB } from "@duckdb/duckdb-wasm";
 import { boot, setAuth, withSpatial } from "./boot.js";
 import { datasetsIn, lit } from "./sql.js";
 import { fetchFrom, loadFailureHint } from "./fetch.js";
+import { httpStore } from "@queria-io/fdl-js";
+import { attachSql, planAttach } from "@queria-io/fdl-js/duckdb";
 
 /** A license of a dataset, as returned by the Queria API. */
 export type License = { id?: string; title?: string; url?: string };
@@ -83,29 +85,42 @@ export const lookup = async (api: string, qualified: string, token: string | nul
 const bearer = (token: string | null): RequestInit | undefined =>
   token === null ? undefined : { headers: { Authorization: `Bearer ${token}` } };
 
-/** Parquet files are read from tables/ next to the metadata: .../metadata.db → .../tables/ */
-export const dataPath = (catalogUrl: string): string => {
+/** The dataset's root, the folder that holds its metadata: .../metadata.db?v=... → .../ */
+export const rootOf = (catalogUrl: string): string => {
   const url = catalogUrl.replace(/\?.*$/, "");
-  return `${url.slice(0, url.lastIndexOf("/") + 1)}tables/`;
+  return url.slice(0, url.lastIndexOf("/") + 1);
 };
 
+/** The version a catalog URL names (`?v=`), if any */
+const versionOf = (catalogUrl: string): string | undefined => new URL(catalogUrl).searchParams.get("v") ?? undefined;
+
 /**
- * Attach one dataset. The catalog is fetched in a single GET: letting DuckDB read it by range
+ * Attach a dataset, and before it the datasets its views read, at the versions its tables.json pins
+ * (@queria-io/fdl-js/duckdb). Each catalog is fetched in a single GET: letting DuckDB read it by range
  * costs hundreds of 16 KiB round trips for large catalogs. Data files are still read by range.
+ * The token goes only to the dataset's own host.
  */
 const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string | null): Promise<void> => {
-  const url = d.versioned_catalog_url ?? d.catalog_url;
-  const res = await fetchFrom(url, bearer(token));
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  // One file per alias: an alias is attached once per DuckDB, while one dataset can be attached
-  // under two aliases, and DuckDB refuses to attach one path twice.
-  const file = `${alias}.duckdb`;
-  await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
+  const root = rootOf(d.catalog_url);
+  const host = new URL(root).origin;
+  const auth = (url: string): Record<string, string> =>
+    token !== null && new URL(url).origin === host ? { Authorization: `Bearer ${token}` } : {};
+  const version = versionOf(d.versioned_catalog_url ?? d.catalog_url);
+  const plan = await planAttach((url) => httpStore(url, { headers: auth(url) }), {
+    [alias]: { url: root, ...(version !== undefined && { version }) },
+  });
   const conn = await db.connect();
   try {
-    await conn.query(
-      `ATTACH ${lit(`ducklake:${file}`)} AS ${alias} (READ_ONLY, DATA_PATH ${lit(dataPath(d.catalog_url))}, OVERRIDE_DATA_PATH true)`,
-    );
+    for (const a of plan) {
+      const found = await conn.query(`SELECT 1 FROM duckdb_databases() WHERE database_name = ${lit(a.name)}`);
+      if (found.numRows > 0) continue;
+      const res = await fetchFrom(a.metadata, { headers: auth(a.metadata) });
+      if (!res.ok) throw new Error(`${a.metadata}: ${res.status}`);
+      // One file per name: one dataset can be attached under two names, and DuckDB refuses to attach one path twice.
+      const file = `${a.name}.duckdb`;
+      await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
+      await conn.query(attachSql({ ...a, metadata: file }));
+    }
   } finally {
     await conn.close();
   }

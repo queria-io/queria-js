@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliases, connect, dataPath, hints, lookup, parseDatasets, shareLink, sharePayload } from "./client.js";
+import { aliases, connect, hints, rootOf, lookup, parseDatasets, shareLink, sharePayload } from "./client.js";
 
 describe("aliases", () => {
   it("uses the last part of each name as the alias", () => {
@@ -26,10 +26,10 @@ describe("parseDatasets", () => {
     expect(() => parseDatasets("alice/e_stat bob/e_stat")).toThrow("share an alias"));
 });
 
-describe("dataPath", () => {
-  it("drops the version and points at data/ next to the metadata", () => {
-    expect(dataPath("https://data.queria.io/d/k/metadata.db?v=1")).toBe("https://data.queria.io/d/k/tables/");
-    expect(dataPath("https://data.queria.io/d/k/ducklake.duckdb")).toBe("https://data.queria.io/d/k/tables/");
+describe("rootOf", () => {
+  it("drops the version and the file name", () => {
+    expect(rootOf("https://data.queria.io/d/k/metadata.db?v=1")).toBe("https://data.queria.io/d/k/");
+    expect(rootOf("https://data.queria.io/d/k/ducklake.duckdb")).toBe("https://data.queria.io/d/k/");
   });
 });
 
