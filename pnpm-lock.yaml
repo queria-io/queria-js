@@ -12,8 +12,8 @@ importers:
         specifier: 1.33.1-dev57.0
         version: 1.33.1-dev57.0
       '@queria-io/fdl-js':
-        specifier: ^0.19.0
-        version: 0.19.0
+        specifier: ^0.20.0
+        version: 0.20.0
       vega:
         specifier: ^6.4.0
         version: 6.4.0
@@ -354,8 +354,8 @@ packages:
   '@maplibre/vt-pbf@4.3.3':
     resolution: {integrity: sha512-dEe5XUd64RQbxNxy2OzIkJnwNDWjVmSXjCd0A7zLirm7QJ/WWbmtDFIkfsiM4yt1cplqzG6oSivRYeWx1SM1yg==}
 
-  '@queria-io/fdl-js@0.19.0':
-    resolution: {integrity: sha512-wM5tymlGOoJe0Srxb+6CDe7J0/ITOKgUBHJbJ3dD7uHwF0nmGaJ/NKz6KCaS4xM619lY8DRk259Lf2yWbxhzlA==}
+  '@queria-io/fdl-js@0.20.0':
+    resolution: {integrity: sha512-3W+aOPTHspJnrah+cxS7u1jGEJC0NtZ5EfpbtwhUQt+D9rs+NN+xGbPxdQACNbyLIUPqL8eS2OFPLhtdE1ENbQ==}
     engines: {node: '>=20'}
 
   '@rolldown/pluginutils@1.0.0-beta.27':
@@ -1694,7 +1694,7 @@ snapshots:
       '@types/geojson': 7946.0.16
       pbf: 5.1.2
 
-  '@queria-io/fdl-js@0.19.0':
+  '@queria-io/fdl-js@0.20.0':
     dependencies:
       fzstd: 0.1.1
       hyparquet: 1.32.0
