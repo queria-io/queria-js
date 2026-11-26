@@ -95,6 +95,12 @@ export const rootOf = (catalogUrl: string): string => {
 const versionOf = (catalogUrl: string): string | undefined => new URL(catalogUrl).searchParams.get("v") ?? undefined;
 
 /**
+ * The last attach started on each DuckDB. Two datasets read in one query can read the same dataset in
+ * their views, so attaches run one after another: otherwise both find it missing and the second ATTACH fails.
+ */
+const attaching = new WeakMap<AsyncDuckDB, Promise<unknown>>();
+
+/**
  * Attach a dataset, and before it the datasets its views read, at the versions its tables.json pins
  * (@queria-io/fdl-js/duckdb). Each catalog is fetched in a single GET: letting DuckDB read it by range
  * costs hundreds of 16 KiB round trips for large catalogs. Data files are still read by range.
@@ -109,21 +115,26 @@ const attach = async (db: AsyncDuckDB, alias: string, d: Dataset, token: string 
   const plan = await planAttach((url) => httpStore(url, { headers: auth(url) }), {
     [alias]: { url: root, ...(version !== undefined && { version }) },
   });
-  const conn = await db.connect();
-  try {
-    for (const a of plan) {
-      const found = await conn.query(`SELECT 1 FROM duckdb_databases() WHERE database_name = ${lit(a.name)}`);
-      if (found.numRows > 0) continue;
-      const res = await fetchFrom(a.metadata, { headers: auth(a.metadata) });
-      if (!res.ok) throw new Error(`${a.metadata}: ${res.status}`);
-      // One file per name: one dataset can be attached under two names, and DuckDB refuses to attach one path twice.
-      const file = `${a.name}.duckdb`;
-      await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
-      await conn.query(attachSql({ ...a, metadata: file }));
+  const run = async (): Promise<void> => {
+    const conn = await db.connect();
+    try {
+      for (const a of plan) {
+        const found = await conn.query(`SELECT 1 FROM duckdb_databases() WHERE database_name = ${lit(a.name)}`);
+        if (found.numRows > 0) continue;
+        const res = await fetchFrom(a.metadata, { headers: auth(a.metadata) });
+        if (!res.ok) throw new Error(`${a.metadata}: ${res.status}`);
+        // One file per name: one dataset can be attached under two names, and DuckDB refuses to attach one path twice.
+        const file = `${a.name}.duckdb`;
+        await db.registerFileBuffer(file, new Uint8Array(await res.arrayBuffer()));
+        await conn.query(attachSql({ ...a, metadata: file }));
+      }
+    } finally {
+      await conn.close();
     }
-  } finally {
-    await conn.close();
-  }
+  };
+  const done = (attaching.get(db) ?? Promise.resolve()).then(run);
+  attaching.set(db, done.catch(() => undefined));
+  await done;
 };
 
 /** Arrow's type id of DECIMAL. */
